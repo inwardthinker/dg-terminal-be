@@ -1,0 +1,170 @@
+{
+  "info": {
+    "name": "dg-terminal-be",
+    "description": "Local API tests for dg-terminal-be (NestJS). Start the server: `npm run start:dev` (default port 3000).\n\n**Auth:** Portfolio routes require a non-empty `Authorization` header (value is not validated — use any Bearer token for local dev).\n\n**Wallet:** Set the `wallet` collection variable to a valid EVM address (`0x` + 40 hex chars).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "wallet",
+      "value": "0x1111111111111111111111111111111111111111"
+    },
+    {
+      "key": "authorization",
+      "value": "Bearer dev-token"
+    }
+  ],
+  "item": [
+    {
+      "name": "App",
+      "item": [
+        {
+          "name": "GET / (hello)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/",
+            "description": "Root handler — returns plain text from `AppService`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Portfolio",
+      "item": [
+        {
+          "name": "GET positions (default sort)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{authorization}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/portfolio/positions?wallet={{wallet}}",
+            "description": "Open positions from Polymarket Data API. Default ordering: categories by total exposure desc, then exposure desc within category."
+          },
+          "response": []
+        },
+        {
+          "name": "GET positions (sort_by + sort_dir)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{authorization}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/portfolio/positions?wallet={{wallet}}&sort_by=unrealized_pnl&sort_dir=asc",
+            "description": "`sort_by` optional: market_name, category, venue, side, avg_entry_price, current_price, shares, cost_basis, unrealized_pnl, unrealized_pnl_pct, exposure. `sort_dir`: asc | desc."
+          },
+          "response": []
+        },
+        {
+          "name": "GET positions — 401 (no Authorization)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/portfolio/positions?wallet={{wallet}}",
+            "description": "Expect **401** when `Authorization` is missing or empty."
+          },
+          "response": []
+        },
+        {
+          "name": "GET positions — 400 (invalid wallet)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{authorization}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/portfolio/positions?wallet=not-an-address",
+            "description": "Expect **400** — wallet must match `^0x[a-fA-F0-9]{40}$`."
+          },
+          "response": []
+        },
+        {
+          "name": "GET closed-positions (default limit)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{authorization}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/portfolio/closed-positions?wallet={{wallet}}",
+            "description": "Closed positions. Backend defaults: limit=30, offset=0 when omitted."
+          },
+          "response": []
+        },
+        {
+          "name": "GET closed-positions (limit + offset + sort)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{authorization}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/portfolio/closed-positions?wallet={{wallet}}&limit=50&offset=0&sort_by=realized_pnl&sort_dir=desc",
+            "description": "`limit` 1–500 (default 30). `offset` >= 0 (default 0). Optional `sort_by` / `sort_dir` on closed-position fields."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
