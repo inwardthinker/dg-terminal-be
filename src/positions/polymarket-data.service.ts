@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { OpenPosition } from './positions.types';
 
 interface PolymarketPositionResponse {
@@ -20,17 +21,36 @@ interface PolymarketPositionResponse {
 @Injectable()
 export class PolymarketDataService {
   private readonly logger = new Logger(PolymarketDataService.name);
-  private readonly baseUrl = 'https://data-api.polymarket.com';
+
+  constructor(private readonly configService: ConfigService) {}
 
   async getOpenPositions(userAddress: string): Promise<OpenPosition[]> {
+    const baseUrl = this.configService.get<string>(
+      'POLYMARKET_DATA_API_URL',
+      'https://data-api.polymarket.com',
+    );
     const params = new URLSearchParams({
       user: userAddress,
       sizeThreshold: '0',
       limit: '500',
     });
 
+    const authHeaderName = this.configService.get<string>(
+      'POLYMARKET_DATA_API_AUTH_HEADER_NAME',
+      '',
+    );
+    const authHeaderValue = this.configService.get<string>(
+      'POLYMARKET_DATA_API_AUTH_HEADER_VALUE',
+      '',
+    );
+    const headers =
+      authHeaderName && authHeaderValue
+        ? { [authHeaderName]: authHeaderValue }
+        : undefined;
+
     const response = await fetch(
-      `${this.baseUrl}/positions?${params.toString()}`,
+      `${baseUrl}/positions?${params.toString()}`,
+      headers ? { headers } : undefined,
     );
     if (!response.ok) {
       throw new Error(
