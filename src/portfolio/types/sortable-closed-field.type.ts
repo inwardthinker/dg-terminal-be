@@ -1,0 +1,26 @@
+export const CLOSED_SORTABLE_FIELDS = [
+  'market_name',
+  'category',
+  'venue',
+  'side',
+  'avg_entry_price',
+  'current_price',
+  'shares',
+  'cost_basis',
+  'realized_pnl',
+  'realized_pnl_pct',
+  'end_date',
+  'closed_at',
+  'condition_id',
+  'outcome_token_id',
+  'proxy_wallet',
+  'slug',
+  'icon',
+  'event_id',
+  'event_slug',
+  'outcome_index',
+  'opposite_outcome',
+  'opposite_asset',
+] as const;
+
+export type SortableClosedField = (typeof CLOSED_SORTABLE_FIELDS)[number];

@@ -1,0 +1,199 @@
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import request from 'supertest';
+import { App } from 'supertest/types';
+import { AppModule } from './../../src/app.module';
+
+type OpenPositionRow = {
+  unrealized_pnl: number;
+};
+
+type OpenPositionsResponse = {
+  positions: OpenPositionRow[];
+};
+
+type ClosedPositionsResponse = {
+  closed_positions: Record<string, unknown>[];
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function toOpenPositionsResponse(value: unknown): OpenPositionsResponse {
+  if (!isRecord(value) || !Array.isArray(value.positions)) {
+    throw new Error('Invalid open positions response shape');
+  }
+  return { positions: value.positions as OpenPositionRow[] };
+}
+
+function toClosedPositionsResponse(value: unknown): ClosedPositionsResponse {
+  if (!isRecord(value) || !Array.isArray(value.closed_positions)) {
+    throw new Error('Invalid closed positions response shape');
+  }
+  return {
+    closed_positions: value.closed_positions as Record<string, unknown>[],
+  };
+}
+
+function expectTypeOfField(
+  row: Record<string, unknown>,
+  key: string,
+  expectedType: 'string' | 'number' | 'boolean',
+): void {
+  expect(typeof row[key]).toBe(expectedType);
+}
+
+describe('Portfolio Positions (e2e)', () => {
+  let app: INestApplication<App>;
+  const authHeader = { Authorization: 'Bearer e2e-token' };
+  const wallet = '0x1111111111111111111111111111111111111111';
+
+  beforeEach(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: {
+          enableImplicitConversion: true,
+        },
+      }),
+    );
+    await app.init();
+  });
+
+  it('returns 401 when unauthenticated', async () => {
+    await request(app.getHttpServer())
+      .get('/api/portfolio/positions')
+      .expect(401);
+    await request(app.getHttpServer())
+      .get('/api/portfolio/closed-positions')
+      .expect(401);
+  });
+
+  it('rejects invalid sort_dir', async () => {
+    await request(app.getHttpServer())
+      .get(`/api/portfolio/positions?wallet=${wallet}&sort_dir=downward`)
+      .set(authHeader)
+      .expect(400);
+  });
+
+  it('rejects invalid wallet query format', async () => {
+    await request(app.getHttpServer())
+      .get('/api/portfolio/positions?wallet=not-an-evm-address')
+      .set(authHeader)
+      .expect(400);
+  });
+
+  it('rejects missing wallet query param', async () => {
+    await request(app.getHttpServer())
+      .get('/api/portfolio/positions')
+      .set(authHeader)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/portfolio/closed-positions')
+      .set(authHeader)
+      .expect(400);
+  });
+
+  it('sorts by unrealized_pnl asc when requested', async () => {
+    const response = await request(app.getHttpServer())
+      .get(
+        `/api/portfolio/positions?wallet=${wallet}&sort_by=unrealized_pnl&sort_dir=asc`,
+      )
+      .set(authHeader)
+      .expect(200);
+    const body = toOpenPositionsResponse(response.body as unknown);
+
+    const pnls = body.positions.map((position) => position.unrealized_pnl);
+
+    if (pnls.length >= 2) {
+      expect(pnls).toEqual([...pnls].sort((a: number, b: number) => a - b));
+    }
+  });
+
+  it('returns 200 and positions shape when authenticated', async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/api/portfolio/positions?wallet=${wallet}`)
+      .set(authHeader)
+      .expect(200);
+    const body = toOpenPositionsResponse(response.body as unknown);
+
+    expect(Array.isArray(body.positions)).toBe(true);
+    if (body.positions.length > 0) {
+      const row = body.positions[0] as unknown;
+      expect(isRecord(row)).toBe(true);
+      if (!isRecord(row)) {
+        throw new Error('positions[0] is not an object');
+      }
+
+      expectTypeOfField(row, 'market_name', 'string');
+      expectTypeOfField(row, 'category', 'string');
+      expectTypeOfField(row, 'venue', 'string');
+      expectTypeOfField(row, 'side', 'string');
+      expectTypeOfField(row, 'avg_entry_price', 'number');
+      expectTypeOfField(row, 'current_price', 'number');
+      expectTypeOfField(row, 'shares', 'number');
+      expectTypeOfField(row, 'cost_basis', 'number');
+      expectTypeOfField(row, 'unrealized_pnl', 'number');
+      expectTypeOfField(row, 'unrealized_pnl_pct', 'number');
+      expectTypeOfField(row, 'exposure', 'number');
+      expectTypeOfField(row, 'condition_id', 'string');
+      expectTypeOfField(row, 'outcome_token_id', 'string');
+      expectTypeOfField(row, 'slug', 'string');
+      expectTypeOfField(row, 'icon', 'string');
+      expectTypeOfField(row, 'redeemable', 'boolean');
+      expectTypeOfField(row, 'mergeable', 'boolean');
+      expectTypeOfField(row, 'negative_risk', 'boolean');
+      expectTypeOfField(row, 'percent_pnl', 'number');
+    }
+  });
+
+  it('returns 200 and closed_positions shape when authenticated', async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/api/portfolio/closed-positions?wallet=${wallet}`)
+      .set(authHeader)
+      .expect(200);
+    const body = toClosedPositionsResponse(response.body as unknown);
+
+    expect(Array.isArray(body.closed_positions)).toBe(true);
+    if (body.closed_positions.length > 0) {
+      const row = body.closed_positions[0] as unknown;
+      expect(isRecord(row)).toBe(true);
+      if (!isRecord(row)) {
+        throw new Error('closed_positions[0] is not an object');
+      }
+
+      expectTypeOfField(row, 'market_name', 'string');
+      expectTypeOfField(row, 'category', 'string');
+      expectTypeOfField(row, 'venue', 'string');
+      expectTypeOfField(row, 'side', 'string');
+      expectTypeOfField(row, 'avg_entry_price', 'number');
+      expectTypeOfField(row, 'current_price', 'number');
+      expectTypeOfField(row, 'shares', 'number');
+      expectTypeOfField(row, 'cost_basis', 'number');
+      expectTypeOfField(row, 'realized_pnl', 'number');
+      expectTypeOfField(row, 'realized_pnl_pct', 'number');
+      expectTypeOfField(row, 'end_date', 'string');
+      expectTypeOfField(row, 'closed_at', 'string');
+      expectTypeOfField(row, 'condition_id', 'string');
+      expectTypeOfField(row, 'outcome_token_id', 'string');
+      expectTypeOfField(row, 'slug', 'string');
+      expectTypeOfField(row, 'icon', 'string');
+      expectTypeOfField(row, 'event_slug', 'string');
+      expectTypeOfField(row, 'outcome_index', 'number');
+    }
+  });
+
+  afterEach(async () => {
+    if (app) {
+      await app.close();
+    }
+  });
+});

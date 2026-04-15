@@ -17,6 +17,6 @@ pnpm-debug.log*
 # IDE files
 .idea/
 .vscode/
-
+.cursor/
 # Nest artifacts
 .nestjs-cli.json
