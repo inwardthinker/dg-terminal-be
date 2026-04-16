@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PortfolioService } from '../../src/portfolio/portfolio.service';
 import { EquityCurveResponse } from '../../src/portfolio/portfolio.types';
@@ -7,8 +8,8 @@ function makeConfigService(
 ): ConfigService {
   const defaults: Record<string, string> = {
     EQUITY_CURVE_API_URL: 'https://api.test/v1/equity/curve',
-    TOTP_CODE: '123456',
-    TOTP_TIMESTAMP: '1776172800',
+    TOTP_CODE: 'mock-totp-code',
+    TOTP_TIMESTAMP: 'mock-totp-timestamp',
   };
   const merged = { ...defaults, ...overrides };
 
@@ -192,6 +193,7 @@ describe('PortfolioService', () => {
   });
 
   it('throws when upstream API returns non-200', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     jest.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 503,
