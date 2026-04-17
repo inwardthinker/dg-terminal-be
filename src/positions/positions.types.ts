@@ -1,6 +1,8 @@
 export interface OpenPosition {
   asset: string;
   size: number;
+  outcome?: string;
+  title?: string;
   avgPrice?: number;
   currentValue?: number;
   initialValue?: number;
@@ -16,6 +18,8 @@ export interface OpenPosition {
 
 export interface PositionPriceEvent {
   position_id: string;
+  outcome: string | null;
+  title: string | null;
   avg_price: number | null;
   current_price: number | null;
   position_value: number | null;

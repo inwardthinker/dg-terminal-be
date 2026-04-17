@@ -5,6 +5,8 @@ import { OpenPosition } from './positions.types';
 interface PolymarketPositionResponse {
   asset: string;
   size: number;
+  outcome?: string;
+  title?: string;
   avgPrice?: number;
   currentValue?: number;
   initialValue?: number;
@@ -64,6 +66,8 @@ export class PolymarketDataService {
       .map((position) => ({
         asset: position.asset,
         size: Number(position.size),
+        outcome: this.normalizeString(position.outcome),
+        title: this.normalizeString(position.title),
         avgPrice:
           typeof position.avgPrice === 'number'
             ? Number(position.avgPrice)
@@ -120,5 +124,14 @@ export class PolymarketDataService {
     });
 
     return openPositions;
+  }
+
+  private normalizeString(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
   }
 }
