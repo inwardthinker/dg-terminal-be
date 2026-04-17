@@ -5,22 +5,7 @@ export interface BalanceSnapshot {
   balance_value: number;
 }
 
-export interface EquityCurvePoint {
+export interface BalanceSnapshotRow {
   date: string;
-  balanceValue: number;
-  dailyChange: number;
-}
-
-export interface EquityCurveRange {
-  startIndex: number;
-  endIndex: number;
-  pointsCount: number;
-  insufficientHistory: boolean;
-}
-
-export interface EquityCurveResponse {
-  userId: number;
-  asOfDate: string;
-  points: EquityCurvePoint[];
-  ranges: Record<string, EquityCurveRange>;
+  balance_value: string | number;
 }

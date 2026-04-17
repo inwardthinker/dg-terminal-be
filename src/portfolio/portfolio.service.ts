@@ -1,89 +1,107 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Pool } from 'pg';
 import {
   BalanceSnapshot,
-  EquityCurveResponse,
+  BalanceSnapshotRow,
   HistoryPeriod,
 } from './portfolio.types';
 
 @Injectable()
-export class PortfolioService {
+export class PortfolioService implements OnModuleDestroy {
   private readonly logger = new Logger(PortfolioService.name);
-  private readonly apiUrl: string;
-  private readonly totpCode: string;
-  private readonly totpTimestamp: string;
+  private readonly pool: Pool;
 
   constructor(private readonly configService: ConfigService) {
-    this.apiUrl = this.configService.getOrThrow<string>('EQUITY_CURVE_API_URL');
-    this.totpCode = this.configService.getOrThrow<string>('TOTP_CODE');
-    this.totpTimestamp =
-      this.configService.getOrThrow<string>('TOTP_TIMESTAMP');
+    const connectionString =
+      this.configService.getOrThrow<string>('DATABASE_URL');
+
+    this.pool = new Pool({ connectionString });
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.pool.end();
   }
 
   async getHistory(
     userId: string,
     period: HistoryPeriod,
   ): Promise<BalanceSnapshot[]> {
-    const data = await this.fetchEquityCurve(userId);
-    const range = data.ranges[period];
+    const points = await this.fetchSnapshotsFromDb(userId, period);
 
-    if (!range || range.pointsCount < 3) {
+    if (points.length < 3) {
       return [];
     }
 
-    const slice = data.points.slice(range.startIndex, range.endIndex + 1);
-
-    return this.fillGaps(slice);
+    return points.map((point) => ({
+      date: point.date,
+      balance_value: Number(point.balance_value),
+    }));
   }
 
-  private async fetchEquityCurve(userId: string): Promise<EquityCurveResponse> {
-    const url = `${this.apiUrl}?userId=${userId}`;
+  private async fetchSnapshotsFromDb(
+    userId: string,
+    period: HistoryPeriod,
+  ): Promise<BalanceSnapshotRow[]> {
+    const query = `
+      WITH latest AS (
+        SELECT MAX(snapshot_date) AS max_date
+        FROM silver_dgterminal.polymarket_equity_snapshots_user
+        WHERE user_id = $1::BIGINT
+      ),
+      raw AS (
+        SELECT
+          snapshot_date::date AS snapshot_date,
+          balance_value
+        FROM silver_dgterminal.polymarket_equity_snapshots_user
+        WHERE user_id = $1::BIGINT
+          AND (
+            $2::text = 'all'
+            OR snapshot_date >= (
+              (SELECT max_date FROM latest) -
+              CASE
+                WHEN $2::text = '7d' THEN INTERVAL '6 days'
+                WHEN $2::text = '30d' THEN INTERVAL '29 days'
+                WHEN $2::text = '90d' THEN INTERVAL '89 days'
+                ELSE INTERVAL '0 days'
+              END
+            )
+          )
+      ),
+      date_bounds AS (
+        SELECT MIN(snapshot_date) AS min_date, MAX(snapshot_date) AS max_date
+        FROM raw
+      ),
+      series AS (
+        SELECT day::date AS date
+        FROM date_bounds,
+          LATERAL generate_series(min_date, max_date, INTERVAL '1 day') AS day
+      )
+      SELECT
+        s.date::text AS date,
+        (
+          SELECT r.balance_value
+          FROM raw r
+          WHERE r.snapshot_date <= s.date
+          ORDER BY r.snapshot_date DESC
+          LIMIT 1
+        ) AS balance_value
+      FROM series s
+      ORDER BY s.date ASC;
+    `;
 
-    const response = await fetch(url, {
-      headers: {
-        'X-TOTP-Code': this.totpCode,
-        'X-TOTP-Timestamp': this.totpTimestamp,
-        Accept: 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      this.logger.error(`Equity curve request failed: ${response.status}`);
-      throw new Error(`Equity curve request failed: ${response.status}`);
+    try {
+      const { rows } = await this.pool.query<BalanceSnapshotRow>(query, [
+        userId,
+        period,
+      ]);
+      return rows.filter((row) => row.balance_value !== null);
+    } catch (error) {
+      this.logger.error(
+        `Failed fetching portfolio history for userId=${userId}, period=${period}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw error;
     }
-
-    return (await response.json()) as EquityCurveResponse;
-  }
-
-  /**
-   * Fills date gaps by carrying forward the last known balance value.
-   * The upstream API may omit no-activity days.
-   */
-  private fillGaps(
-    points: { date: string; balanceValue: number }[],
-  ): BalanceSnapshot[] {
-    if (points.length === 0) return [];
-
-    const result: BalanceSnapshot[] = [];
-    const start = new Date(points[0].date);
-    const end = new Date(points[points.length - 1].date);
-
-    const pointMap = new Map<string, number>();
-    for (const p of points) {
-      pointMap.set(p.date, p.balanceValue);
-    }
-
-    let lastBalance = points[0].balanceValue;
-    const current = new Date(start);
-
-    while (current <= end) {
-      const dateStr = current.toISOString().slice(0, 10);
-      const balance = pointMap.get(dateStr) ?? lastBalance;
-      lastBalance = balance;
-      result.push({ date: dateStr, balance_value: balance });
-      current.setUTCDate(current.getUTCDate() + 1);
-    }
-
-    return result;
   }
 }
