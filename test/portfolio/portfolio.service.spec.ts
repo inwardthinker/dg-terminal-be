@@ -5,6 +5,7 @@ import { PortfolioService } from '../../src/portfolio/portfolio.service';
 
 const mockQuery = jest.fn();
 const mockEnd = jest.fn();
+const mockRelease = jest.fn();
 
 function getFirstSqlArg(): string {
   const calls = mockQuery.mock.calls as unknown as Array<[string, unknown[]]>;
@@ -15,6 +16,10 @@ jest.mock('pg', () => ({
   Pool: jest.fn().mockImplementation(() => ({
     query: mockQuery,
     end: mockEnd,
+    connect: jest.fn().mockResolvedValue({
+      query: mockQuery,
+      release: mockRelease,
+    }),
   })),
 }));
 
@@ -27,6 +32,7 @@ function makeConfigService(
   const merged = { ...defaults, ...overrides };
 
   return {
+    get: jest.fn((key: string) => merged[key]),
     getOrThrow: jest.fn((key: string) => {
       if (!(key in merged)) throw new Error(`Missing config key: ${key}`);
       return merged[key];
@@ -38,6 +44,7 @@ describe('PortfolioService', () => {
   beforeEach(() => {
     mockQuery.mockReset();
     mockEnd.mockReset();
+    mockRelease.mockReset();
     (Pool as unknown as jest.Mock).mockClear();
   });
 
@@ -183,5 +190,125 @@ describe('PortfolioService', () => {
     await service.onModuleDestroy();
 
     expect(mockEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('fully closes a position and returns realized_pnl + closed_at', async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            proxy_wallet: '0xabc',
+            market_name: 'Will BTC hit 100k',
+            side: 'YES',
+            venue: 'Polymarket',
+            category: 'Crypto',
+            shares: '100',
+            avg_entry_price: '0.4',
+            current_price: '0.7',
+            cost_basis: '40',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const service = new PortfolioService(makeConfigService());
+    const result = await service.closePosition('1878', 'asset-1', {
+      type: 'full',
+    });
+
+    expect(result.realized_pnl).toBe(30);
+    expect(result.closed_at).toBeDefined();
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.stringContaining('DELETE FROM silver_dgterminal.positions'),
+      ['1878', 'asset-1'],
+    );
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'INSERT INTO silver_dgterminal.portfolio_summary',
+      ),
+      expect.any(Array),
+    );
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO silver_dgterminal.trade_history'),
+      expect.any(Array),
+    );
+  });
+
+  it('partially closes a position and returns remaining_size + avg_entry_price', async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            proxy_wallet: '0xabc',
+            market_name: 'Will BTC hit 100k',
+            side: 'YES',
+            venue: 'Polymarket',
+            category: 'Crypto',
+            shares: '100',
+            avg_entry_price: '0.4',
+            current_price: '0.7',
+            cost_basis: '40',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const service = new PortfolioService(makeConfigService());
+    const result = await service.closePosition('1878', 'asset-1', {
+      type: 'partial',
+      percentage: 25,
+    });
+
+    expect(result).toEqual({
+      realized_pnl: 7.5,
+      remaining_size: 75,
+      avg_entry_price: 0.4,
+    });
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE silver_dgterminal.positions'),
+      ['75', '30', '0.4', '1878', 'asset-1'],
+    );
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'INSERT INTO silver_dgterminal.portfolio_summary',
+      ),
+      expect.any(Array),
+    );
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO silver_dgterminal.trade_history'),
+      expect.any(Array),
+    );
+  });
+
+  it('throws not found when position does not exist', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+    const service = new PortfolioService(makeConfigService());
+
+    await expect(
+      service.closePosition('1878', 'missing', { type: 'full' }),
+    ).rejects.toThrow('Position not found');
+  });
+
+  it('throws conflict when position is already closed', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          proxy_wallet: '0xabc',
+          market_name: 'Will BTC hit 100k',
+          side: 'YES',
+          venue: 'Polymarket',
+          category: 'Crypto',
+          shares: '0',
+          avg_entry_price: '0.4',
+          current_price: '0.7',
+          cost_basis: '0',
+        },
+      ],
+    });
+    const service = new PortfolioService(makeConfigService());
+
+    await expect(
+      service.closePosition('1878', 'asset-1', { type: 'full' }),
+    ).rejects.toThrow('Position is already closed');
   });
 });
