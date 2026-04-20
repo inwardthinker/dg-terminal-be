@@ -1,6 +1,7 @@
 export interface OpenPosition {
   asset: string;
   size: number;
+  endDate?: string;
   outcome?: string;
   title?: string;
   avgPrice?: number;
