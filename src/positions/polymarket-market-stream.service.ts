@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import WebSocket from 'ws';
 import { MarketPriceUpdate } from './positions.types';
 
@@ -20,8 +21,6 @@ type MarketEvent = Record<string, unknown>;
 @Injectable()
 export class PolymarketMarketStreamService implements OnModuleDestroy {
   private readonly logger = new Logger(PolymarketMarketStreamService.name);
-  private readonly wsUrl =
-    'wss://ws-subscriptions-clob.polymarket.com/ws/market';
   private readonly listeners = new Map<string, Set<PriceListener>>();
   private readonly latestPrices = new Map<string, number>();
   private readonly subscribedAssets = new Set<string>();
@@ -29,6 +28,8 @@ export class PolymarketMarketStreamService implements OnModuleDestroy {
   private ws: WebSocket | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private pingTimer: NodeJS.Timeout | null = null;
+
+  constructor(private readonly configService: ConfigService) {}
 
   static getReconnectDelayMs(attempt: number): number {
     const baseDelay = 1000 * 2 ** attempt;
@@ -87,7 +88,25 @@ export class PolymarketMarketStreamService implements OnModuleDestroy {
       return;
     }
 
-    this.ws = new WebSocket(this.wsUrl);
+    const wsUrl = this.configService.get<string>(
+      'POLYMARKET_MARKET_WS_URL',
+      'wss://ws-subscriptions-clob.polymarket.com/ws/market',
+    );
+    const wsAuthHeaderName = this.configService.get<string>(
+      'POLYMARKET_MARKET_WS_AUTH_HEADER_NAME',
+      '',
+    );
+    const wsAuthHeaderValue = this.configService.get<string>(
+      'POLYMARKET_MARKET_WS_AUTH_HEADER_VALUE',
+      '',
+    );
+
+    const wsOptions =
+      wsAuthHeaderName && wsAuthHeaderValue
+        ? { headers: { [wsAuthHeaderName]: wsAuthHeaderValue } }
+        : undefined;
+
+    this.ws = new WebSocket(wsUrl, wsOptions);
 
     this.ws.on('open', () => {
       this.logger.log('Connected to Polymarket market stream');

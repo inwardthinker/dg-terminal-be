@@ -46,6 +46,8 @@ export class PositionsPriceService {
           openPositions.forEach((position) => {
             emit({
               position_id: position.asset,
+              outcome: position.outcome ?? null,
+              title: position.title ?? null,
               avg_price:
                 typeof position.avgPrice === 'number'
                   ? position.avgPrice
@@ -107,6 +109,8 @@ export class PositionsPriceService {
     if (stale || currentPrice === null) {
       return {
         position_id: position.asset,
+        outcome: position.outcome ?? null,
+        title: position.title ?? null,
         avg_price:
           typeof position.avgPrice === 'number' ? position.avgPrice : null,
         current_price: null,
@@ -130,6 +134,8 @@ export class PositionsPriceService {
 
     return {
       position_id: position.asset,
+      outcome: position.outcome ?? null,
+      title: position.title ?? null,
       avg_price:
         typeof position.avgPrice === 'number' ? position.avgPrice : null,
       current_price: currentPrice,

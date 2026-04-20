@@ -1,8 +1,18 @@
 import { PolymarketDataService } from '../../src/positions/polymarket-data.service';
 
 describe('PolymarketDataService', () => {
+  const mockConfigService = {
+    get: jest.fn((key: string, defaultValue?: string) => {
+      if (key === 'POLYMARKET_DATA_API_URL') {
+        return 'https://data-api.polymarket.com';
+      }
+      return defaultValue;
+    }),
+  };
+
   afterEach(() => {
     jest.restoreAllMocks();
+    mockConfigService.get.mockClear();
   });
 
   it('returns only open positions with positive size', async () => {
@@ -16,7 +26,7 @@ describe('PolymarketDataService', () => {
         ]),
     } as Response);
 
-    const service = new PolymarketDataService();
+    const service = new PolymarketDataService(mockConfigService as never);
     const result = await service.getOpenPositions(
       '0x798a7921f5b2c684ecbaa7a6ae216a819fa6cc72',
     );
@@ -32,7 +42,7 @@ describe('PolymarketDataService', () => {
       json: () => Promise.resolve({}),
     } as Response);
 
-    const service = new PolymarketDataService();
+    const service = new PolymarketDataService(mockConfigService as never);
 
     await expect(
       service.getOpenPositions('0x798a7921f5b2c684ecbaa7a6ae216a819fa6cc72'),
