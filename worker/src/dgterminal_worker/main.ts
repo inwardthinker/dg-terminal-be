@@ -12,24 +12,51 @@ async function bootstrap(): Promise<void> {
   const db = new WorkerDb(config);
   const api = new PolymarketDataApi(config);
 
-  const runningLoops = new Set<string>();
-
   const runSafe = async (name: string, fn: () => Promise<void>) => {
-    if (runningLoops.has(name)) {
-      // eslint-disable-next-line no-console
-      console.warn(`[${name}] skipped: previous execution still running`);
-      return;
-    }
-
-    runningLoops.add(name);
     try {
       await fn();
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error(`[${name}] failed`, error);
-    } finally {
-      runningLoops.delete(name);
     }
+  };
+
+  const loopTimers = new Set<NodeJS.Timeout>();
+
+  const startRecurringLoop = (
+    name: string,
+    intervalMs: number,
+    fn: () => Promise<void>,
+  ): void => {
+    let stopped = false;
+
+    const runOnce = async () => {
+      if (stopped) return;
+      const startedAt = Date.now();
+      await runSafe(name, fn);
+      const elapsedMs = Date.now() - startedAt;
+      if (elapsedMs > intervalMs) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[${name}] cycle took ${elapsedMs}ms (>${intervalMs}ms interval); running again immediately`,
+        );
+      }
+      const delay = Math.max(0, intervalMs - elapsedMs);
+      const timer = setTimeout(() => {
+        loopTimers.delete(timer);
+        void runOnce();
+      }, delay);
+      loopTimers.add(timer);
+    };
+
+    void runOnce();
+
+    process.on('SIGTERM', () => {
+      stopped = true;
+    });
+    process.on('SIGINT', () => {
+      stopped = true;
+    });
   };
 
   await runSafe('loop-a-initial', () => runLoopA(db, api));
@@ -37,25 +64,24 @@ async function bootstrap(): Promise<void> {
   await runSafe('loop-c-initial', () => runLoopC(db, api));
   await runSafe('loop-d-initial', () => runLoopD(db, api));
 
-  setInterval(() => {
-    void runSafe('loop-a', () => runLoopA(db, api));
-  }, config.intervalsMs.loopA);
-
-  setInterval(() => {
-    void runSafe('loop-b', () => runLoopB(db, api));
-  }, config.intervalsMs.loopB);
-
-  setInterval(() => {
-    void runSafe('loop-c', () => runLoopC(db, api));
-  }, config.intervalsMs.loopC);
-
-  setInterval(() => {
-    void runSafe('loop-d', () => runLoopD(db, api));
-  }, config.intervalsMs.loopD);
+  startRecurringLoop('loop-a', config.intervalsMs.loopA, () =>
+    runLoopA(db, api),
+  );
+  startRecurringLoop('loop-b', config.intervalsMs.loopB, () =>
+    runLoopB(db, api),
+  );
+  startRecurringLoop('loop-c', config.intervalsMs.loopC, () =>
+    runLoopC(db, api),
+  );
+  startRecurringLoop('loop-d', config.intervalsMs.loopD, () =>
+    runLoopD(db, api),
+  );
 
   const ws = startWsLoop(config, db);
 
   const shutdown = async () => {
+    loopTimers.forEach((timer) => clearTimeout(timer));
+    loopTimers.clear();
     ws.close();
     await db.close();
     process.exit(0);

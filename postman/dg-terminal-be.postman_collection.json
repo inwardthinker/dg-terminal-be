@@ -1,17 +1,31 @@
 {
   "info": {
     "name": "dg-terminal-be",
-    "description": "Local API tests for dg-terminal-be (NestJS). Start the server: `npm run start:dev` (default port 3000).\n\n**Auth:** Portfolio routes require a non-empty `Authorization` header (value is not validated — use any Bearer token for local dev).\n\n**Wallet:** Set the `wallet` collection variable to a valid EVM address (`0x` + 40 hex chars).",
+    "description": "Staging API tests for dg-terminal-be (NestJS).\n\n**Auth:** Portfolio routes require a non-empty `Authorization` header (value is not validated — use any Bearer token for local dev).\n\n**Wallet:** Set the `wallet` collection variable to a valid EVM address (`0x` + 40 hex chars).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response is JSON\", function () {",
+          "  pm.response.to.have.header(\"Content-Type\");",
+          "  pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/json\");",
+          "});"
+        ]
+      }
+    }
+  ],
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:8080"
+      "value": "https://dg-terminal-be-staging.up.railway.app"
     },
     {
       "key": "wallet",
-      "value": "0x1111111111111111111111111111111111111111"
+      "value": "0x798a7921f5b2c684ecbaa7a6ae216a819fa6cc72"
     },
     {
       "key": "authorization",
