@@ -3,8 +3,6 @@ import { PortfolioClosedPositionsRepository } from './repositories/portfolio-clo
 import { PortfolioPositionsRepository } from './repositories/portfolio-positions.repository';
 import { PortfolioClosedPosition } from './types/portfolio-closed-position.type';
 import { PortfolioPosition } from './types/portfolio-position.type';
-import { sortClosedPortfolioPositions } from './utils/sort-closed-positions.util';
-import { sortPortfolioPositions } from './utils/sort-positions.util';
 
 const testWallet = '0x1111111111111111111111111111111111111111';
 
@@ -111,47 +109,6 @@ const sample: PortfolioPosition[] = [
   },
 ];
 
-describe('sortPortfolioPositions', () => {
-  it('orders categories by total exposure desc by default', () => {
-    const result = sortPortfolioPositions(sample, { wallet: testWallet });
-
-    expect(result.map((position) => position.category)).toEqual([
-      'Politics',
-      'Politics',
-      'Sports',
-      'Crypto',
-    ]);
-  });
-
-  it('orders rows by exposure desc within each category', () => {
-    const result = sortPortfolioPositions(sample, { wallet: testWallet });
-
-    expect(result[0].market_name).toBe('US Election');
-    expect(result[1].market_name).toBe('Senate Seat');
-  });
-
-  it('sorts by unrealized_pnl asc when sort_by is set', () => {
-    const result = sortPortfolioPositions(sample, {
-      wallet: testWallet,
-      sort_by: 'unrealized_pnl',
-      sort_dir: 'asc',
-    });
-    const pnls = result.map((position) => position.unrealized_pnl);
-
-    expect(pnls).toEqual([...pnls].sort((a, b) => a - b));
-  });
-
-  it('defaults sort_dir to desc when sort_by is set and sort_dir is absent', () => {
-    const result = sortPortfolioPositions(sample, {
-      wallet: testWallet,
-      sort_by: 'exposure',
-    });
-    const exposures = result.map((position) => position.exposure);
-
-    expect(exposures).toEqual([...exposures].sort((a, b) => b - a));
-  });
-});
-
 const closedRowDefaults: Omit<
   PortfolioClosedPosition,
   | 'market_name'
@@ -224,36 +181,11 @@ const closedSample: PortfolioClosedPosition[] = [
   },
 ];
 
-describe('sortClosedPortfolioPositions', () => {
-  it('orders categories by total realized PnL desc by default', () => {
-    const result = sortClosedPortfolioPositions(closedSample, {
-      wallet: testWallet,
-    });
-
-    expect(result.map((p) => p.category)).toEqual([
-      'Sports',
-      'Sports',
-      'Politics',
-    ]);
-  });
-
-  it('sorts by realized_pnl asc when sort_by is set', () => {
-    const result = sortClosedPortfolioPositions(closedSample, {
-      wallet: testWallet,
-      sort_by: 'realized_pnl',
-      sort_dir: 'asc',
-    });
-    const pnls = result.map((p) => p.realized_pnl);
-
-    expect(pnls).toEqual([...pnls].sort((a, b) => a - b));
-  });
-});
-
 describe('PortfolioService', () => {
   const wallet = testWallet;
 
-  it('returns default-sorted positions shape', async () => {
-    const mockPolymarketClientService: Pick<
+  it('returns positions from repository', async () => {
+    const mockPositionsRepository: Pick<
       PortfolioPositionsRepository,
       'findByWallet'
     > = {
@@ -264,23 +196,17 @@ describe('PortfolioService', () => {
       'findByWallet'
     > = { findByWallet: jest.fn().mockResolvedValue(closedSample) };
     const service = new PortfolioService(
-      mockPolymarketClientService as PortfolioPositionsRepository,
+      mockPositionsRepository as PortfolioPositionsRepository,
       mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
     );
 
     const result = await service.getPositions({ wallet });
 
     expect(result.positions).toHaveLength(4);
-    expect(result.positions.map((position) => position.category)).toEqual([
-      'Crypto',
-      'Sports',
-      'Politics',
-      'Politics',
-    ]);
   });
 
   it('forwards wallet query param to positions repository', async () => {
-    const mockPolymarketClientService: Pick<
+    const mockPositionsRepository: Pick<
       PortfolioPositionsRepository,
       'findByWallet'
     > = {
@@ -291,18 +217,18 @@ describe('PortfolioService', () => {
       'findByWallet'
     > = { findByWallet: jest.fn().mockResolvedValue([]) };
     const service = new PortfolioService(
-      mockPolymarketClientService as PortfolioPositionsRepository,
+      mockPositionsRepository as PortfolioPositionsRepository,
       mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
     );
     await service.getPositions({ wallet });
 
-    expect(mockPolymarketClientService.findByWallet).toHaveBeenCalledWith({
+    expect(mockPositionsRepository.findByWallet).toHaveBeenCalledWith({
       wallet,
     });
   });
 
   it('returns closed positions', async () => {
-    const mockPolymarketClientService: Pick<
+    const mockClosedPositionsRepository: Pick<
       PortfolioClosedPositionsRepository,
       'findByWallet'
     > = {
@@ -314,19 +240,19 @@ describe('PortfolioService', () => {
     > = { findByWallet: jest.fn().mockResolvedValue(sample) };
     const service = new PortfolioService(
       mockPositionsRepository as PortfolioPositionsRepository,
-      mockPolymarketClientService as PortfolioClosedPositionsRepository,
+      mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
     );
 
     const result = await service.getClosedPositions({ wallet });
 
     expect(result.closed_positions).toHaveLength(3);
-    expect(mockPolymarketClientService.findByWallet).toHaveBeenCalledWith({
+    expect(mockClosedPositionsRepository.findByWallet).toHaveBeenCalledWith({
       wallet,
     });
   });
 
   it('forwards limit and offset to closed positions repository', async () => {
-    const mockPolymarketClientService: Pick<
+    const mockClosedPositionsRepository: Pick<
       PortfolioClosedPositionsRepository,
       'findByWallet'
     > = {
@@ -338,7 +264,7 @@ describe('PortfolioService', () => {
     > = { findByWallet: jest.fn().mockResolvedValue([]) };
     const service = new PortfolioService(
       mockPositionsRepository as PortfolioPositionsRepository,
-      mockPolymarketClientService as PortfolioClosedPositionsRepository,
+      mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
     );
 
     await service.getClosedPositions({
@@ -347,7 +273,7 @@ describe('PortfolioService', () => {
       offset: 10,
     });
 
-    expect(mockPolymarketClientService.findByWallet).toHaveBeenCalledWith({
+    expect(mockClosedPositionsRepository.findByWallet).toHaveBeenCalledWith({
       wallet,
       limit: 50,
       offset: 10,
