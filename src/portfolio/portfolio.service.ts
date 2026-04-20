@@ -24,14 +24,29 @@ export class PortfolioService implements OnModuleDestroy {
   private readonly venueTimeoutMs: number;
 
   constructor(private readonly configService: ConfigService) {
-    const connectionString =
-      this.configService.getOrThrow<string>('DATABASE_URL');
+    const connectionString = this.buildConnectionString();
     this.venueOrderUrl = this.configService.get<string>('VENUE_ORDER_URL');
     this.venueTimeoutMs = Number(
       this.configService.get<string>('VENUE_ORDER_TIMEOUT_MS') ?? '1500',
     );
 
     this.pool = new Pool({ connectionString });
+  }
+
+  private buildConnectionString(): string {
+    const dbHost = this.configService.get<string>('db_hostname');
+    const dbName = this.configService.get<string>('db_name');
+    const dbUser = this.configService.get<string>('db_username');
+    const dbPassword = this.configService.get<string>('db_password');
+    const dbPort = this.configService.get<string>('db_port');
+
+    if (dbHost && dbName && dbUser && dbPassword && dbPort) {
+      const encodedUser = encodeURIComponent(dbUser);
+      const encodedPassword = encodeURIComponent(dbPassword);
+      return `postgresql://${encodedUser}:${encodedPassword}@${dbHost}:${dbPort}/${dbName}`;
+    }
+
+    return this.configService.getOrThrow<string>('DATABASE_URL');
   }
 
   async onModuleDestroy(): Promise<void> {

@@ -28,6 +28,11 @@ function makeConfigService(
 ): ConfigService {
   const defaults: Record<string, string> = {
     DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+    db_hostname: 'localhost',
+    db_name: 'db',
+    db_username: 'user',
+    db_password: 'pass',
+    db_port: '5432',
   };
   const merged = { ...defaults, ...overrides };
 
@@ -48,10 +53,33 @@ describe('PortfolioService', () => {
     (Pool as unknown as jest.Mock).mockClear();
   });
 
-  it('creates pg pool with DATABASE_URL', () => {
-    const databaseUrl = 'postgres://test-user:test-pass@db:5432/test-db';
+  it('creates pg pool with db_* env vars when available', () => {
+    new PortfolioService(
+      makeConfigService({
+        db_hostname: 'db.example.com',
+        db_name: 'test-db',
+        db_username: 'test-user',
+        db_password: 'test-pass',
+        db_port: '5432',
+      }),
+    );
 
-    new PortfolioService(makeConfigService({ DATABASE_URL: databaseUrl }));
+    expect(Pool).toHaveBeenCalledWith({
+      connectionString:
+        'postgresql://test-user:test-pass@db.example.com:5432/test-db',
+    });
+  });
+
+  it('falls back to DATABASE_URL when db_* vars are missing', () => {
+    const databaseUrl =
+      'postgres://fallback-user:fallback-pass@db:5432/fallback';
+
+    new PortfolioService(
+      makeConfigService({
+        DATABASE_URL: databaseUrl,
+        db_hostname: '',
+      }),
+    );
 
     expect(Pool).toHaveBeenCalledWith({ connectionString: databaseUrl });
   });
