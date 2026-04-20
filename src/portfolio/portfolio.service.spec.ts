@@ -1,5 +1,6 @@
-import { PolymarketClientService } from '../polymarket/polymarket-client.service';
 import { PortfolioService } from './portfolio.service';
+import { PortfolioClosedPositionsRepository } from './repositories/portfolio-closed-positions.repository';
+import { PortfolioPositionsRepository } from './repositories/portfolio-positions.repository';
 import { PortfolioClosedPosition } from './types/portfolio-closed-position.type';
 import { PortfolioPosition } from './types/portfolio-position.type';
 import { sortClosedPortfolioPositions } from './utils/sort-closed-positions.util';
@@ -253,72 +254,91 @@ describe('PortfolioService', () => {
 
   it('returns default-sorted positions shape', async () => {
     const mockPolymarketClientService: Pick<
-      PolymarketClientService,
-      'getOpenPositions'
+      PortfolioPositionsRepository,
+      'findByWallet'
     > = {
-      getOpenPositions: jest.fn().mockResolvedValue(sample),
+      findByWallet: jest.fn().mockResolvedValue(sample),
     };
+    const mockClosedPositionsRepository: Pick<
+      PortfolioClosedPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(closedSample) };
     const service = new PortfolioService(
-      mockPolymarketClientService as PolymarketClientService,
+      mockPolymarketClientService as PortfolioPositionsRepository,
+      mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
     );
 
     const result = await service.getPositions({ wallet });
 
     expect(result.positions).toHaveLength(4);
     expect(result.positions.map((position) => position.category)).toEqual([
-      'Politics',
-      'Politics',
-      'Sports',
       'Crypto',
+      'Sports',
+      'Politics',
+      'Politics',
     ]);
   });
 
-  it('forwards wallet query param to polymarket client', async () => {
+  it('forwards wallet query param to positions repository', async () => {
     const mockPolymarketClientService: Pick<
-      PolymarketClientService,
-      'getOpenPositions'
+      PortfolioPositionsRepository,
+      'findByWallet'
     > = {
-      getOpenPositions: jest.fn().mockResolvedValue(sample),
+      findByWallet: jest.fn().mockResolvedValue(sample),
     };
+    const mockClosedPositionsRepository: Pick<
+      PortfolioClosedPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue([]) };
     const service = new PortfolioService(
-      mockPolymarketClientService as PolymarketClientService,
+      mockPolymarketClientService as PortfolioPositionsRepository,
+      mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
     );
     await service.getPositions({ wallet });
 
-    expect(mockPolymarketClientService.getOpenPositions).toHaveBeenCalledWith(
+    expect(mockPolymarketClientService.findByWallet).toHaveBeenCalledWith({
       wallet,
-    );
+    });
   });
 
-  it('returns closed positions with default limit/offset', async () => {
+  it('returns closed positions', async () => {
     const mockPolymarketClientService: Pick<
-      PolymarketClientService,
-      'getClosedPositions'
+      PortfolioClosedPositionsRepository,
+      'findByWallet'
     > = {
-      getClosedPositions: jest.fn().mockResolvedValue(closedSample),
+      findByWallet: jest.fn().mockResolvedValue(closedSample),
     };
+    const mockPositionsRepository: Pick<
+      PortfolioPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(sample) };
     const service = new PortfolioService(
-      mockPolymarketClientService as PolymarketClientService,
+      mockPositionsRepository as PortfolioPositionsRepository,
+      mockPolymarketClientService as PortfolioClosedPositionsRepository,
     );
 
     const result = await service.getClosedPositions({ wallet });
 
     expect(result.closed_positions).toHaveLength(3);
-    expect(mockPolymarketClientService.getClosedPositions).toHaveBeenCalledWith(
+    expect(mockPolymarketClientService.findByWallet).toHaveBeenCalledWith({
       wallet,
-      { limit: 30, offset: 0 },
-    );
+    });
   });
 
-  it('forwards limit and offset to polymarket client for closed positions', async () => {
+  it('forwards limit and offset to closed positions repository', async () => {
     const mockPolymarketClientService: Pick<
-      PolymarketClientService,
-      'getClosedPositions'
+      PortfolioClosedPositionsRepository,
+      'findByWallet'
     > = {
-      getClosedPositions: jest.fn().mockResolvedValue([]),
+      findByWallet: jest.fn().mockResolvedValue([]),
     };
+    const mockPositionsRepository: Pick<
+      PortfolioPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue([]) };
     const service = new PortfolioService(
-      mockPolymarketClientService as PolymarketClientService,
+      mockPositionsRepository as PortfolioPositionsRepository,
+      mockPolymarketClientService as PortfolioClosedPositionsRepository,
     );
 
     await service.getClosedPositions({
@@ -327,9 +347,10 @@ describe('PortfolioService', () => {
       offset: 10,
     });
 
-    expect(mockPolymarketClientService.getClosedPositions).toHaveBeenCalledWith(
+    expect(mockPolymarketClientService.findByWallet).toHaveBeenCalledWith({
       wallet,
-      { limit: 50, offset: 10 },
-    );
+      limit: 50,
+      offset: 10,
+    });
   });
 });
