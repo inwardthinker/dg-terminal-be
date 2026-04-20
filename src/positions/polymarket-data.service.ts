@@ -5,6 +5,7 @@ import { OpenPosition } from './positions.types';
 interface PolymarketPositionResponse {
   asset: string;
   size: number;
+  endDate?: string;
   outcome?: string;
   title?: string;
   avgPrice?: number;
@@ -66,6 +67,7 @@ export class PolymarketDataService {
       .map((position) => ({
         asset: position.asset,
         size: Number(position.size),
+        endDate: this.normalizeString(position.endDate),
         outcome: this.normalizeString(position.outcome),
         title: this.normalizeString(position.title),
         avgPrice:

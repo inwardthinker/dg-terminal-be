@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PolymarketDataService } from './polymarket-data.service';
 import { PolymarketMarketStreamService } from './polymarket-market-stream.service';
 import { OpenPosition, PositionPriceEvent } from './positions.types';
@@ -8,11 +9,21 @@ type PriceEmitFn = (event: PositionPriceEvent) => void;
 @Injectable()
 export class PositionsPriceService {
   private readonly logger = new Logger(PositionsPriceService.name);
+  private readonly emitIntervalMs: number;
 
   constructor(
     private readonly polymarketDataService: PolymarketDataService,
     private readonly polymarketMarketStreamService: PolymarketMarketStreamService,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    const configuredInterval = Number(
+      this.configService.get<string>('POSITIONS_EMIT_INTERVAL_MS', '5000'),
+    );
+    this.emitIntervalMs =
+      Number.isFinite(configuredInterval) && configuredInterval > 0
+        ? configuredInterval
+        : 5000;
+  }
 
   async subscribeUser(
     userAddress: string,
@@ -36,7 +47,35 @@ export class PositionsPriceService {
       openPositionsByAsset.set(position.asset, position);
     });
 
-    return this.polymarketMarketStreamService.subscribe(
+    const periodicSnapshotTimer = setInterval(() => {
+      let emittedCount = 0;
+      let staleCount = 0;
+      openPositions.forEach((position) => {
+        const latestPrice = this.polymarketMarketStreamService.getLastPrice(
+          position.asset,
+        );
+        const hasPrice = typeof latestPrice === 'number';
+        if (!hasPrice) {
+          staleCount += 1;
+        }
+        emit(
+          this.buildPositionEvent(
+            position,
+            hasPrice ? latestPrice : null,
+            !hasPrice,
+          ),
+        );
+        emittedCount += 1;
+      });
+      this.logger.debug(
+        `Periodic snapshot emitted for user ${userAddress}: total=${emittedCount}, stale=${staleCount}, intervalMs=${this.emitIntervalMs}`,
+      );
+    }, this.emitIntervalMs);
+    this.logger.log(
+      `Started periodic snapshot emitter for user ${userAddress} with interval ${this.emitIntervalMs}ms`,
+    );
+
+    const unsubscribeStream = this.polymarketMarketStreamService.subscribe(
       [...openPositionsByAsset.keys()],
       (update) => {
         if (update.stale) {
@@ -44,20 +83,7 @@ export class PositionsPriceService {
             `Venue prices unavailable; emitting stale flag for ${openPositions.length} positions`,
           );
           openPositions.forEach((position) => {
-            emit({
-              position_id: position.asset,
-              outcome: position.outcome ?? null,
-              title: position.title ?? null,
-              avg_price:
-                typeof position.avgPrice === 'number'
-                  ? position.avgPrice
-                  : null,
-              current_price: null,
-              position_value: null,
-              pnl_amount: null,
-              pnl_percent: null,
-              stale: true,
-            });
+            emit(this.buildPositionEvent(position, null, true));
           });
           return;
         }
@@ -77,6 +103,11 @@ export class PositionsPriceService {
         );
       },
     );
+
+    return () => {
+      clearInterval(periodicSnapshotTimer);
+      unsubscribeStream();
+    };
   }
 
   private emitInitialSnapshot(
@@ -107,16 +138,29 @@ export class PositionsPriceService {
     stale: boolean,
   ): PositionPriceEvent {
     if (stale || currentPrice === null) {
+      const fallbackPrice =
+        typeof position.curPrice === 'number' ? position.curPrice : null;
+      const fallbackPositionValue =
+        typeof position.currentValue === 'number'
+          ? position.currentValue
+          : typeof fallbackPrice === 'number'
+            ? fallbackPrice * position.size
+            : null;
+      const fallbackPnl =
+        typeof position.cashPnl === 'number' ? position.cashPnl : null;
+      const fallbackPercentPnl =
+        typeof position.percentPnl === 'number' ? position.percentPnl : null;
+
       return {
         position_id: position.asset,
         outcome: position.outcome ?? null,
         title: position.title ?? null,
         avg_price:
           typeof position.avgPrice === 'number' ? position.avgPrice : null,
-        current_price: null,
-        position_value: null,
-        pnl_amount: null,
-        pnl_percent: null,
+        current_price: fallbackPrice,
+        position_value: fallbackPositionValue,
+        pnl_amount: fallbackPnl,
+        pnl_percent: fallbackPercentPnl,
         stale: true,
       };
     }
