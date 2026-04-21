@@ -1,4 +1,5 @@
 import { WorkerConfig } from './config';
+import { inflateRawSync } from 'node:zlib';
 
 export type OpenPositionApiRow = Record<string, unknown>;
 export type ClosedPositionApiRow = Record<string, unknown>;
@@ -20,7 +21,19 @@ export class PolymarketDataApi {
     const response = await fetch(url.toString(), this.requestInit());
     if (!response.ok) return 0;
 
-    const payload: unknown = await response.json();
+    const contentType =
+      response.headers?.get('content-type')?.toLowerCase() ?? '';
+    const bodyBytes = Buffer.from(await response.arrayBuffer());
+
+    if (
+      contentType.includes('application/zip') ||
+      contentType.includes('application/octet-stream') ||
+      isZipArchive(bodyBytes)
+    ) {
+      return parseSnapshotBalanceFromZip(bodyBytes);
+    }
+
+    const payload: unknown = JSON.parse(bodyBytes.toString('utf8'));
     if (!isRecord(payload)) return 0;
 
     const balance =
@@ -107,4 +120,83 @@ function toNumber(value: unknown): number {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
+}
+
+function isZipArchive(bytes: Buffer): boolean {
+  return bytes.length >= 4 && bytes.readUInt32LE(0) === 0x04034b50;
+}
+
+function parseSnapshotBalanceFromZip(zipBytes: Buffer): number {
+  const file = readZipFile(zipBytes, 'equity.csv');
+  if (!file) return 0;
+  return parseBalanceFromEquityCsv(file.toString('utf8'));
+}
+
+function parseBalanceFromEquityCsv(csvText: string): number {
+  const normalized = csvText.replace(/\r/g, '').trim();
+  if (!normalized) return 0;
+  const lines = normalized.split('\n').filter((line) => line.trim().length > 0);
+  if (lines.length === 0) return 0;
+
+  const firstDataLine = lines.length >= 2 ? lines[1] : lines[0];
+  const columns = firstDataLine.split(',').map((column) => column.trim());
+  for (const column of columns) {
+    const numeric = toNumber(column);
+    if (numeric !== 0 || /^[-+]?0*\.?0+$/.test(column)) {
+      return numeric;
+    }
+  }
+  return 0;
+}
+
+function readZipFile(zipBytes: Buffer, fileName: string): Buffer | null {
+  const eocdOffset = zipBytes.lastIndexOf(
+    Buffer.from([0x50, 0x4b, 0x05, 0x06]),
+  );
+  if (eocdOffset < 0 || eocdOffset + 22 > zipBytes.length) return null;
+
+  const centralDirectoryOffset = zipBytes.readUInt32LE(eocdOffset + 16);
+  const entries = zipBytes.readUInt16LE(eocdOffset + 10);
+
+  let cursor = centralDirectoryOffset;
+  for (let i = 0; i < entries; i += 1) {
+    if (cursor + 46 > zipBytes.length) return null;
+    if (zipBytes.readUInt32LE(cursor) !== 0x02014b50) return null;
+
+    const compressionMethod = zipBytes.readUInt16LE(cursor + 10);
+    const compressedSize = zipBytes.readUInt32LE(cursor + 20);
+    const fileNameLength = zipBytes.readUInt16LE(cursor + 28);
+    const extraLength = zipBytes.readUInt16LE(cursor + 30);
+    const commentLength = zipBytes.readUInt16LE(cursor + 32);
+    const localHeaderOffset = zipBytes.readUInt32LE(cursor + 42);
+    const entryNameStart = cursor + 46;
+    const entryNameEnd = entryNameStart + fileNameLength;
+    if (entryNameEnd > zipBytes.length) return null;
+
+    const entryName = zipBytes.toString('utf8', entryNameStart, entryNameEnd);
+    if (entryName === fileName) {
+      if (localHeaderOffset + 30 > zipBytes.length) return null;
+      if (zipBytes.readUInt32LE(localHeaderOffset) !== 0x04034b50) return null;
+
+      const localNameLength = zipBytes.readUInt16LE(localHeaderOffset + 26);
+      const localExtraLength = zipBytes.readUInt16LE(localHeaderOffset + 28);
+      const dataStart =
+        localHeaderOffset + 30 + localNameLength + localExtraLength;
+      const dataEnd = dataStart + compressedSize;
+      if (dataEnd > zipBytes.length) return null;
+
+      const compressedData = zipBytes.subarray(dataStart, dataEnd);
+      if (compressionMethod === 0) {
+        return Buffer.from(compressedData);
+      }
+      if (compressionMethod === 8) {
+        return inflateRawSync(compressedData);
+      }
+      return null;
+    }
+
+    cursor = entryNameEnd + extraLength + commentLength;
+  }
+
+  return null;
 }

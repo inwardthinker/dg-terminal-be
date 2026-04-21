@@ -16,6 +16,10 @@ type ClosedPositionsResponse = {
   closed_positions: Record<string, unknown>[];
 };
 
+type SummaryResponse = {
+  summary: Record<string, unknown>;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -34,6 +38,13 @@ function toClosedPositionsResponse(value: unknown): ClosedPositionsResponse {
   return {
     closed_positions: value.closed_positions as Record<string, unknown>[],
   };
+}
+
+function toSummaryResponse(value: unknown): SummaryResponse {
+  if (!isRecord(value) || !isRecord(value.summary)) {
+    throw new Error('Invalid summary response shape');
+  }
+  return { summary: value.summary };
 }
 
 function expectTypeOfField(
@@ -75,6 +86,9 @@ describe('Portfolio Positions (e2e)', () => {
     await request(app.getHttpServer())
       .get('/api/portfolio/closed-positions')
       .expect(401);
+    await request(app.getHttpServer())
+      .get('/api/portfolio/summary')
+      .expect(401);
   });
 
   it('rejects invalid sort_dir', async () => {
@@ -98,6 +112,17 @@ describe('Portfolio Positions (e2e)', () => {
       .expect(400);
     await request(app.getHttpServer())
       .get('/api/portfolio/closed-positions')
+      .set(authHeader)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/portfolio/summary')
+      .set(authHeader)
+      .expect(400);
+  });
+
+  it('rejects invalid safe_wallet_address format for summary endpoint', async () => {
+    await request(app.getHttpServer())
+      .get('/api/portfolio/summary?safe_wallet_address=not-an-evm-address')
       .set(authHeader)
       .expect(400);
   });
@@ -189,6 +214,48 @@ describe('Portfolio Positions (e2e)', () => {
       expectTypeOfField(row, 'event_slug', 'string');
       expectTypeOfField(row, 'outcome_index', 'number');
     }
+  });
+
+  it('returns 200 and summary shape when authenticated', async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/api/portfolio/summary?safe_wallet_address=${wallet}`)
+      .set(authHeader)
+      .expect(200);
+    const body = toSummaryResponse(response.body as unknown);
+
+    expectTypeOfField(body.summary, 'balance', 'number');
+    expectTypeOfField(body.summary, 'open_exposure', 'number');
+    expectTypeOfField(body.summary, 'unrealized_pnl', 'number');
+    expectTypeOfField(body.summary, 'realized_30d', 'number');
+    expectTypeOfField(body.summary, 'rewards_earned', 'number');
+    expect(
+      body.summary.rewards_pct_of_pnl === null ||
+        typeof body.summary.rewards_pct_of_pnl === 'number',
+    ).toBe(true);
+    expect(
+      body.summary.deployment_rate_pct === null ||
+        typeof body.summary.deployment_rate_pct === 'number',
+    ).toBe(true);
+    expect(
+      body.summary.balance_last_updated === null ||
+        typeof body.summary.balance_last_updated === 'string',
+    ).toBe(true);
+    expect(
+      body.summary.open_exposure_last_updated === null ||
+        typeof body.summary.open_exposure_last_updated === 'string',
+    ).toBe(true);
+    expect(
+      body.summary.unrealized_pnl_last_updated === null ||
+        typeof body.summary.unrealized_pnl_last_updated === 'string',
+    ).toBe(true);
+    expect(
+      body.summary.realized_30d_last_updated === null ||
+        typeof body.summary.realized_30d_last_updated === 'string',
+    ).toBe(true);
+    expect(
+      body.summary.rewards_last_updated === null ||
+        typeof body.summary.rewards_last_updated === 'string',
+    ).toBe(true);
   });
 
   afterEach(async () => {

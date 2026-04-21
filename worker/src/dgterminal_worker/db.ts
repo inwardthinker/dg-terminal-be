@@ -153,6 +153,53 @@ export class WorkerDb {
     }, 'upsertPositions');
   }
 
+  async upsertPortfolioSummaryBalance(
+    rows: PortfolioSummaryBalanceUpsertRow[],
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    const sortedRows = [...rows].sort((a, b) => {
+      if (a.userId !== b.userId) return a.userId - b.userId;
+      return a.safeWalletAddress.localeCompare(b.safeWalletAddress);
+    });
+
+    await this.withDeadlockRetry(async () => {
+      const client = await this.pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const row of sortedRows) {
+          await client.query(
+            `
+            INSERT INTO portfolio_summary (
+              user_id,
+              safe_wallet_address,
+              balance,
+              balance_last_updated,
+              updated_at
+            ) VALUES (
+              $1,
+              $2,
+              $3,
+              NOW(),
+              NOW()
+            )
+            ON CONFLICT (user_id, safe_wallet_address) DO UPDATE SET
+              balance = EXCLUDED.balance,
+              balance_last_updated = NOW(),
+              updated_at = NOW()
+            `,
+            [row.userId, row.safeWalletAddress, row.balance],
+          );
+        }
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }, 'upsertPortfolioSummaryBalance');
+  }
+
   async deletePositionOrphans(wallet: string, assets: string[]): Promise<void> {
     await this.withDeadlockRetry(async () => {
       if (assets.length === 0) {
@@ -167,6 +214,66 @@ export class WorkerDb {
         [wallet, assets],
       );
     }, 'deletePositionOrphans');
+  }
+
+  async upsertPortfolioSummaryExposure(
+    userId: number,
+    safeWalletAddress: string,
+  ): Promise<void> {
+    await this.withDeadlockRetry(async () => {
+      await this.pool.query(
+        `
+        WITH position_totals AS (
+          SELECT
+            COALESCE(SUM(cost_basis), 0) AS open_exposure,
+            COALESCE(SUM(unrealized_pnl), 0) AS unrealized_pnl
+          FROM positions
+          WHERE user_id = $1
+            AND safe_wallet_address = $2
+        ),
+        current_balance AS (
+          SELECT balance
+          FROM portfolio_summary
+          WHERE user_id = $1
+            AND safe_wallet_address = $2
+          LIMIT 1
+        )
+        INSERT INTO portfolio_summary (
+          user_id,
+          safe_wallet_address,
+          open_exposure,
+          open_exposure_last_updated,
+          unrealized_pnl,
+          unrealized_pnl_last_updated,
+          deployment_rate_pct,
+          updated_at
+        )
+        SELECT
+          $1,
+          $2,
+          pt.open_exposure,
+          NOW(),
+          pt.unrealized_pnl,
+          NOW(),
+          CASE
+            WHEN (COALESCE(cb.balance, 0) + pt.open_exposure) > 0
+              THEN (pt.open_exposure / (COALESCE(cb.balance, 0) + pt.open_exposure)) * 100
+            ELSE NULL
+          END,
+          NOW()
+        FROM position_totals pt
+        LEFT JOIN current_balance cb ON TRUE
+        ON CONFLICT (user_id, safe_wallet_address) DO UPDATE SET
+          open_exposure = EXCLUDED.open_exposure,
+          open_exposure_last_updated = NOW(),
+          unrealized_pnl = EXCLUDED.unrealized_pnl,
+          unrealized_pnl_last_updated = NOW(),
+          deployment_rate_pct = EXCLUDED.deployment_rate_pct,
+          updated_at = NOW()
+        `,
+        [userId, safeWalletAddress],
+      );
+    }, 'upsertPortfolioSummaryExposure');
   }
 
   async upsertTradeHistory(rows: TradeHistoryUpsertRow[]): Promise<void> {
@@ -252,6 +359,91 @@ export class WorkerDb {
         client.release();
       }
     }, 'upsertTradeHistory');
+  }
+
+  async upsertPortfolioSummaryRewards(
+    userId: number,
+    safeWalletAddress: string,
+    rewardsEarned: number,
+  ): Promise<void> {
+    await this.withDeadlockRetry(async () => {
+      await this.pool.query(
+        `
+        WITH current_realized AS (
+          SELECT realized_30d
+          FROM portfolio_summary
+          WHERE user_id = $1
+            AND safe_wallet_address = $2
+          LIMIT 1
+        )
+        INSERT INTO portfolio_summary (
+          user_id,
+          safe_wallet_address,
+          rewards_earned,
+          rewards_pct_of_pnl,
+          rewards_last_updated,
+          updated_at
+        )
+        SELECT
+          $1,
+          $2,
+          $3,
+          CASE
+            WHEN COALESCE(cr.realized_30d, 0) > 0
+              THEN ($3 / cr.realized_30d) * 100
+            ELSE NULL
+          END,
+          NOW(),
+          NOW()
+        FROM (SELECT 1) seed
+        LEFT JOIN current_realized cr ON TRUE
+        ON CONFLICT (user_id, safe_wallet_address) DO UPDATE SET
+          rewards_earned = EXCLUDED.rewards_earned,
+          rewards_pct_of_pnl = EXCLUDED.rewards_pct_of_pnl,
+          rewards_last_updated = NOW(),
+          updated_at = NOW()
+        `,
+        [userId, safeWalletAddress, rewardsEarned],
+      );
+    }, 'upsertPortfolioSummaryRewards');
+  }
+
+  async upsertPortfolioSummaryRealized30d(
+    userId: number,
+    safeWalletAddress: string,
+  ): Promise<void> {
+    await this.withDeadlockRetry(async () => {
+      await this.pool.query(
+        `
+        WITH realized_total AS (
+          SELECT COALESCE(SUM(realized_pnl), 0) AS realized_30d
+          FROM trade_history
+          WHERE user_id = $1
+            AND safe_wallet_address = $2
+            AND trade_time > NOW() - INTERVAL '30 days'
+        )
+        INSERT INTO portfolio_summary (
+          user_id,
+          safe_wallet_address,
+          realized_30d,
+          realized_30d_last_updated,
+          updated_at
+        )
+        SELECT
+          $1,
+          $2,
+          rt.realized_30d,
+          NOW(),
+          NOW()
+        FROM realized_total rt
+        ON CONFLICT (user_id, safe_wallet_address) DO UPDATE SET
+          realized_30d = EXCLUDED.realized_30d,
+          realized_30d_last_updated = NOW(),
+          updated_at = NOW()
+        `,
+        [userId, safeWalletAddress],
+      );
+    }, 'upsertPortfolioSummaryRealized30d');
   }
 
   async updatePositionPricePatch(
@@ -377,4 +569,10 @@ export type TradeHistoryUpsertRow = {
   outcomeIndex: number;
   oppositeOutcome: string;
   oppositeAsset: string;
+};
+
+export type PortfolioSummaryBalanceUpsertRow = {
+  userId: number;
+  safeWalletAddress: string;
+  balance: number;
 };

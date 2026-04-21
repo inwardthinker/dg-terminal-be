@@ -1,5 +1,6 @@
 import { PortfolioClosedPositionsRepository } from './portfolio-closed-positions.repository';
 import { PortfolioPositionsRepository } from './portfolio-positions.repository';
+import { PortfolioSummaryRepository } from './portfolio-summary.repository';
 
 type MockPool = {
   query: jest.Mock;
@@ -38,5 +39,20 @@ describe('Portfolio repositories sort mappings', () => {
     const firstCall = pool.query.mock.calls[0] as unknown[] | undefined;
     const sql = (firstCall?.[0] as string | undefined) ?? '';
     expect(sql).toContain('ORDER BY trade_time DESC');
+  });
+
+  it('aggregates summary fields from portfolio_summary table', async () => {
+    const pool: MockPool = {
+      query: jest.fn().mockResolvedValue({ rows: [] }),
+    };
+    const repo = new PortfolioSummaryRepository(pool as never);
+
+    await repo.findByWallet('0x1111111111111111111111111111111111111111');
+
+    const firstCall = pool.query.mock.calls[0] as unknown[] | undefined;
+    const sql = (firstCall?.[0] as string | undefined) ?? '';
+    expect(sql).toContain('FROM portfolio_summary');
+    expect(sql).toContain('COALESCE(SUM(balance), 0)');
+    expect(sql).toContain('MIN(balance_last_updated)');
   });
 });
