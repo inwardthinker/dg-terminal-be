@@ -49,6 +49,11 @@ function mongoSanitizeCompatibleWithExpress5(
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.enableCors({
+    origin: true,
+    credentials: true,
+  });
+
   app.use(helmet());
   app.use(hpp());
   app.use(mongoSanitizeCompatibleWithExpress5());

@@ -62,6 +62,22 @@ export class PositionsGateway
       return fromAuth.toLowerCase();
     }
 
+    const fromWalletAuth = authPayload?.['walletAddress'];
+    if (this.isValidAddress(fromWalletAuth)) {
+      return fromWalletAuth.toLowerCase();
+    }
+
+    const queryPayload = client.handshake.query as Record<string, unknown>;
+    const fromQueryUser = queryPayload?.['userAddress'];
+    if (this.isValidAddress(fromQueryUser)) {
+      return fromQueryUser.toLowerCase();
+    }
+
+    const fromQueryWallet = queryPayload?.['walletAddress'];
+    if (this.isValidAddress(fromQueryWallet)) {
+      return fromQueryWallet.toLowerCase();
+    }
+
     return null;
   }
 
