@@ -1,5 +1,6 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import hpp from 'hpp';
 import mongoSanitize from 'express-mongo-sanitize';
@@ -10,7 +11,16 @@ async function bootstrap() {
 
   app.use(helmet());
   app.use(hpp());
-  app.use(mongoSanitize());
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    const sanitizeTargets = ['body', 'params', 'headers', 'query'] as const;
+    sanitizeTargets.forEach((key) => {
+      const payload = (req as Record<string, unknown>)[key];
+      if (payload && typeof payload === 'object') {
+        mongoSanitize.sanitize(payload as Record<string, unknown>);
+      }
+    });
+    next();
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({
