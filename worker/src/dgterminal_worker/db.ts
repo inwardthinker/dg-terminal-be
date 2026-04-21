@@ -44,7 +44,9 @@ export class WorkerDb {
   async upsertPositions(rows: PositionUpsertRow[]): Promise<void> {
     if (rows.length === 0) return;
     const sortedRows = [...rows].sort((a, b) => {
-      const walletCompare = a.proxyWallet.localeCompare(b.proxyWallet);
+      const walletCompare = a.safeWalletAddress.localeCompare(
+        b.safeWalletAddress,
+      );
       if (walletCompare !== 0) return walletCompare;
       return a.asset.localeCompare(b.asset);
     });
@@ -57,7 +59,7 @@ export class WorkerDb {
           await client.query(
             `
           INSERT INTO positions (
-            user_id, proxy_wallet, asset, condition_id, market_name, category, venue, side,
+            user_id, safe_wallet_address, asset, condition_id, market_name, category, venue, side,
             icon, end_date, redeemable, shares, avg_entry_price, cost_basis, current_price,
             unrealized_pnl, unrealized_pnl_pct, fair_value, fair_value_updated_at, last_rest_sync,
             last_updated, updated_at, slug, event_id, event_slug, outcome_index, opposite_outcome,
@@ -71,7 +73,7 @@ export class WorkerDb {
             $26,$27,$28,$29,$30,$31,
             $32,$33,$34
           )
-          ON CONFLICT (proxy_wallet, asset) DO UPDATE SET
+          ON CONFLICT (safe_wallet_address, asset) DO UPDATE SET
             market_name = EXCLUDED.market_name,
             category = EXCLUDED.category,
             venue = EXCLUDED.venue,
@@ -105,7 +107,7 @@ export class WorkerDb {
           `,
             [
               row.userId,
-              row.proxyWallet,
+              row.safeWalletAddress,
               row.asset,
               row.conditionId,
               row.marketName,
@@ -151,19 +153,127 @@ export class WorkerDb {
     }, 'upsertPositions');
   }
 
+  async upsertPortfolioSummaryBalance(
+    rows: PortfolioSummaryBalanceUpsertRow[],
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    const sortedRows = [...rows].sort((a, b) => {
+      if (a.userId !== b.userId) return a.userId - b.userId;
+      return a.safeWalletAddress.localeCompare(b.safeWalletAddress);
+    });
+
+    await this.withDeadlockRetry(async () => {
+      const client = await this.pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const row of sortedRows) {
+          await client.query(
+            `
+            INSERT INTO portfolio_summary (
+              user_id,
+              safe_wallet_address,
+              balance,
+              balance_last_updated,
+              updated_at
+            ) VALUES (
+              $1,
+              $2,
+              $3,
+              NOW(),
+              NOW()
+            )
+            ON CONFLICT (user_id, safe_wallet_address) DO UPDATE SET
+              balance = EXCLUDED.balance,
+              balance_last_updated = NOW(),
+              updated_at = NOW()
+            `,
+            [row.userId, row.safeWalletAddress, row.balance],
+          );
+        }
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }, 'upsertPortfolioSummaryBalance');
+  }
+
   async deletePositionOrphans(wallet: string, assets: string[]): Promise<void> {
     await this.withDeadlockRetry(async () => {
       if (assets.length === 0) {
-        await this.pool.query('DELETE FROM positions WHERE proxy_wallet = $1', [
-          wallet,
-        ]);
+        await this.pool.query(
+          'DELETE FROM positions WHERE safe_wallet_address = $1',
+          [wallet],
+        );
         return;
       }
       await this.pool.query(
-        'DELETE FROM positions WHERE proxy_wallet = $1 AND asset != ALL($2::text[])',
+        'DELETE FROM positions WHERE safe_wallet_address = $1 AND asset != ALL($2::text[])',
         [wallet, assets],
       );
     }, 'deletePositionOrphans');
+  }
+
+  async upsertPortfolioSummaryExposure(
+    userId: number,
+    safeWalletAddress: string,
+  ): Promise<void> {
+    await this.withDeadlockRetry(async () => {
+      await this.pool.query(
+        `
+        WITH position_totals AS (
+          SELECT
+            COALESCE(SUM(cost_basis), 0) AS open_exposure,
+            COALESCE(SUM(unrealized_pnl), 0) AS unrealized_pnl
+          FROM positions
+          WHERE user_id = $1
+            AND safe_wallet_address = $2
+        ),
+        current_balance AS (
+          SELECT balance
+          FROM portfolio_summary
+          WHERE user_id = $1
+            AND safe_wallet_address = $2
+          LIMIT 1
+        )
+        INSERT INTO portfolio_summary (
+          user_id,
+          safe_wallet_address,
+          open_exposure,
+          open_exposure_last_updated,
+          unrealized_pnl,
+          unrealized_pnl_last_updated,
+          deployment_rate_pct,
+          updated_at
+        )
+        SELECT
+          $1,
+          $2,
+          pt.open_exposure,
+          NOW(),
+          pt.unrealized_pnl,
+          NOW(),
+          CASE
+            WHEN (COALESCE(cb.balance, 0) + pt.open_exposure) > 0
+              THEN (pt.open_exposure / (COALESCE(cb.balance, 0) + pt.open_exposure)) * 100
+            ELSE NULL
+          END,
+          NOW()
+        FROM position_totals pt
+        LEFT JOIN current_balance cb ON TRUE
+        ON CONFLICT (user_id, safe_wallet_address) DO UPDATE SET
+          open_exposure = EXCLUDED.open_exposure,
+          open_exposure_last_updated = NOW(),
+          unrealized_pnl = EXCLUDED.unrealized_pnl,
+          unrealized_pnl_last_updated = NOW(),
+          deployment_rate_pct = EXCLUDED.deployment_rate_pct,
+          updated_at = NOW()
+        `,
+        [userId, safeWalletAddress],
+      );
+    }, 'upsertPortfolioSummaryExposure');
   }
 
   async upsertTradeHistory(rows: TradeHistoryUpsertRow[]): Promise<void> {
@@ -176,7 +286,7 @@ export class WorkerDb {
           await client.query(
             `
         INSERT INTO trade_history (
-            user_id, proxy_wallet, trade_id, trade_time, market_name, side, venue, category,
+            user_id, safe_wallet_address, trade_id, trade_time, market_name, side, venue, category,
             entry_price, exit_price, cost_basis, shares, outcome, realized_pnl, rewards_earned,
             is_settlement, is_manual_close, last_sync, updated_at, asset, condition_id, slug, icon,
             event_id, event_slug, outcome_index, opposite_outcome, opposite_asset
@@ -214,7 +324,7 @@ export class WorkerDb {
           `,
             [
               row.userId,
-              row.proxyWallet,
+              row.safeWalletAddress,
               row.tradeId,
               row.tradeTime,
               row.marketName,
@@ -251,6 +361,91 @@ export class WorkerDb {
     }, 'upsertTradeHistory');
   }
 
+  async upsertPortfolioSummaryRewards(
+    userId: number,
+    safeWalletAddress: string,
+    rewardsEarned: number,
+  ): Promise<void> {
+    await this.withDeadlockRetry(async () => {
+      await this.pool.query(
+        `
+        WITH current_realized AS (
+          SELECT realized_30d
+          FROM portfolio_summary
+          WHERE user_id = $1
+            AND safe_wallet_address = $2
+          LIMIT 1
+        )
+        INSERT INTO portfolio_summary (
+          user_id,
+          safe_wallet_address,
+          rewards_earned,
+          rewards_pct_of_pnl,
+          rewards_last_updated,
+          updated_at
+        )
+        SELECT
+          $1,
+          $2,
+          $3,
+          CASE
+            WHEN COALESCE(cr.realized_30d, 0) > 0
+              THEN ($3 / cr.realized_30d) * 100
+            ELSE NULL
+          END,
+          NOW(),
+          NOW()
+        FROM (SELECT 1) seed
+        LEFT JOIN current_realized cr ON TRUE
+        ON CONFLICT (user_id, safe_wallet_address) DO UPDATE SET
+          rewards_earned = EXCLUDED.rewards_earned,
+          rewards_pct_of_pnl = EXCLUDED.rewards_pct_of_pnl,
+          rewards_last_updated = NOW(),
+          updated_at = NOW()
+        `,
+        [userId, safeWalletAddress, rewardsEarned],
+      );
+    }, 'upsertPortfolioSummaryRewards');
+  }
+
+  async upsertPortfolioSummaryRealized30d(
+    userId: number,
+    safeWalletAddress: string,
+  ): Promise<void> {
+    await this.withDeadlockRetry(async () => {
+      await this.pool.query(
+        `
+        WITH realized_total AS (
+          SELECT COALESCE(SUM(realized_pnl), 0) AS realized_30d
+          FROM trade_history
+          WHERE user_id = $1
+            AND safe_wallet_address = $2
+            AND trade_time > NOW() - INTERVAL '30 days'
+        )
+        INSERT INTO portfolio_summary (
+          user_id,
+          safe_wallet_address,
+          realized_30d,
+          realized_30d_last_updated,
+          updated_at
+        )
+        SELECT
+          $1,
+          $2,
+          rt.realized_30d,
+          NOW(),
+          NOW()
+        FROM realized_total rt
+        ON CONFLICT (user_id, safe_wallet_address) DO UPDATE SET
+          realized_30d = EXCLUDED.realized_30d,
+          realized_30d_last_updated = NOW(),
+          updated_at = NOW()
+        `,
+        [userId, safeWalletAddress],
+      );
+    }, 'upsertPortfolioSummaryRealized30d');
+  }
+
   async updatePositionPricePatch(
     wallet: string,
     asset: string,
@@ -268,7 +463,7 @@ export class WorkerDb {
             last_ws_update = NOW(),
             last_updated = NOW(),
             updated_at = NOW()
-        WHERE proxy_wallet = $1 AND asset = $2
+        WHERE safe_wallet_address = $1 AND asset = $2
         `,
         [wallet, asset, currentPrice, unrealizedPnl, unrealizedPnlPct],
       );
@@ -317,7 +512,7 @@ function sleep(ms: number): Promise<void> {
 
 export type PositionUpsertRow = {
   userId: number;
-  proxyWallet: string;
+  safeWalletAddress: string;
   asset: string;
   conditionId: string;
   marketName: string;
@@ -350,7 +545,7 @@ export type PositionUpsertRow = {
 
 export type TradeHistoryUpsertRow = {
   userId: number;
-  proxyWallet: string;
+  safeWalletAddress: string;
   tradeId: string;
   tradeTime: Date;
   marketName: string;
@@ -374,4 +569,10 @@ export type TradeHistoryUpsertRow = {
   outcomeIndex: number;
   oppositeOutcome: string;
   oppositeAsset: string;
+};
+
+export type PortfolioSummaryBalanceUpsertRow = {
+  userId: number;
+  safeWalletAddress: string;
+  balance: number;
 };

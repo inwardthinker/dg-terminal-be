@@ -42,7 +42,7 @@ export function mapOpenPositionToUpsert(
 
   return {
     userId,
-    proxyWallet: wallet,
+    safeWalletAddress: wallet,
     asset: toStr(row.asset),
     conditionId: toStr(row.conditionId ?? row.condition_id),
     marketName: toStr(
@@ -100,7 +100,7 @@ export function mapClosedPositionToUpsert(
 
   return {
     userId,
-    proxyWallet: wallet,
+    safeWalletAddress: wallet,
     tradeId,
     tradeTime: Number.isFinite(ts) && ts > 0 ? new Date(ts * 1000) : new Date(),
     marketName: toStr(

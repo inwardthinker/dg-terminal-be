@@ -12,7 +12,7 @@ export const SORTABLE_FIELDS = [
   'exposure',
   'condition_id',
   'outcome_token_id',
-  'proxy_wallet',
+  'safe_wallet_address',
   'slug',
   'icon',
   'event_id',

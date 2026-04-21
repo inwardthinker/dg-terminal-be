@@ -47,12 +47,12 @@ export function startWsLoop(
         attempt = 0;
 
         const positionResult = await db.pool.query<{
-          proxy_wallet: string;
+          safe_wallet_address: string;
           shares: string;
           avg_entry_price: string;
         }>(
           `
-          SELECT proxy_wallet, shares::text, avg_entry_price::text
+          SELECT safe_wallet_address, shares::text, avg_entry_price::text
           FROM positions
           WHERE asset = $1
           `,
@@ -67,7 +67,7 @@ export function startWsLoop(
           const pnl = currentValue - costBasis;
           const pnlPct = costBasis > 0 ? pnl / costBasis : 0;
           await db.updatePositionPricePatch(
-            row.proxy_wallet,
+            row.safe_wallet_address,
             assetId,
             currentPrice,
             pnl,

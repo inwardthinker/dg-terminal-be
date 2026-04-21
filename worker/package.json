@@ -5,7 +5,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/dgterminal_worker/main.js",
-    "start:dev": "tsx src/dgterminal_worker/main.ts"
+    "start:dev": "tsx src/dgterminal_worker/main.ts",
+    "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.3",

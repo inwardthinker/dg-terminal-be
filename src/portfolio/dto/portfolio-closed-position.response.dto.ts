@@ -17,7 +17,7 @@ export class PortfolioClosedPositionResponseDto {
   condition_id!: string;
   /** Outcome ERC1155 token id (`asset`). */
   outcome_token_id!: string;
-  proxy_wallet!: string;
+  safe_wallet_address!: string;
   slug!: string;
   icon!: string;
   event_id!: string;

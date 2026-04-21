@@ -1,6 +1,7 @@
 import { PortfolioService } from './portfolio.service';
 import { PortfolioClosedPositionsRepository } from './repositories/portfolio-closed-positions.repository';
 import { PortfolioPositionsRepository } from './repositories/portfolio-positions.repository';
+import { PortfolioSummaryRepository } from './repositories/portfolio-summary.repository';
 import { PortfolioClosedPosition } from './types/portfolio-closed-position.type';
 import { PortfolioPosition } from './types/portfolio-position.type';
 
@@ -22,7 +23,7 @@ const openRowDefaults: Omit<
   venue: 'Polymarket',
   condition_id: '',
   outcome_token_id: '',
-  proxy_wallet: '',
+  safe_wallet_address: '',
   slug: '',
   icon: '',
   event_id: '',
@@ -126,7 +127,7 @@ const closedRowDefaults: Omit<
   venue: 'Polymarket',
   condition_id: '',
   outcome_token_id: '',
-  proxy_wallet: '',
+  safe_wallet_address: '',
   slug: '',
   icon: '',
   event_id: '',
@@ -195,9 +196,14 @@ describe('PortfolioService', () => {
       PortfolioClosedPositionsRepository,
       'findByWallet'
     > = { findByWallet: jest.fn().mockResolvedValue(closedSample) };
+    const mockSummaryRepository: Pick<
+      PortfolioSummaryRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(null) };
     const service = new PortfolioService(
       mockPositionsRepository as PortfolioPositionsRepository,
       mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
+      mockSummaryRepository as PortfolioSummaryRepository,
     );
 
     const result = await service.getPositions({ wallet });
@@ -216,9 +222,14 @@ describe('PortfolioService', () => {
       PortfolioClosedPositionsRepository,
       'findByWallet'
     > = { findByWallet: jest.fn().mockResolvedValue([]) };
+    const mockSummaryRepository: Pick<
+      PortfolioSummaryRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(null) };
     const service = new PortfolioService(
       mockPositionsRepository as PortfolioPositionsRepository,
       mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
+      mockSummaryRepository as PortfolioSummaryRepository,
     );
     await service.getPositions({ wallet });
 
@@ -238,9 +249,14 @@ describe('PortfolioService', () => {
       PortfolioPositionsRepository,
       'findByWallet'
     > = { findByWallet: jest.fn().mockResolvedValue(sample) };
+    const mockSummaryRepository: Pick<
+      PortfolioSummaryRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(null) };
     const service = new PortfolioService(
       mockPositionsRepository as PortfolioPositionsRepository,
       mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
+      mockSummaryRepository as PortfolioSummaryRepository,
     );
 
     const result = await service.getClosedPositions({ wallet });
@@ -262,9 +278,14 @@ describe('PortfolioService', () => {
       PortfolioPositionsRepository,
       'findByWallet'
     > = { findByWallet: jest.fn().mockResolvedValue([]) };
+    const mockSummaryRepository: Pick<
+      PortfolioSummaryRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(null) };
     const service = new PortfolioService(
       mockPositionsRepository as PortfolioPositionsRepository,
       mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
+      mockSummaryRepository as PortfolioSummaryRepository,
     );
 
     await service.getClosedPositions({
@@ -277,6 +298,80 @@ describe('PortfolioService', () => {
       wallet,
       limit: 50,
       offset: 10,
+    });
+  });
+
+  it('returns summary from repository', async () => {
+    const summary = {
+      balance: 100,
+      open_exposure: 40,
+      unrealized_pnl: 5,
+      realized_30d: 20,
+      rewards_earned: 2,
+      rewards_pct_of_pnl: 10,
+      deployment_rate_pct: 28.57,
+      balance_last_updated: '2026-01-01T00:00:00.000Z',
+      open_exposure_last_updated: '2026-01-01T00:00:00.000Z',
+      unrealized_pnl_last_updated: '2026-01-01T00:00:00.000Z',
+      realized_30d_last_updated: '2026-01-01T00:00:00.000Z',
+      rewards_last_updated: '2026-01-01T00:00:00.000Z',
+    };
+    const mockPositionsRepository: Pick<
+      PortfolioPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(sample) };
+    const mockClosedPositionsRepository: Pick<
+      PortfolioClosedPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(closedSample) };
+    const mockSummaryRepository: Pick<
+      PortfolioSummaryRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(summary) };
+    const service = new PortfolioService(
+      mockPositionsRepository as PortfolioPositionsRepository,
+      mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
+      mockSummaryRepository as PortfolioSummaryRepository,
+    );
+
+    const result = await service.getSummary({ safe_wallet_address: wallet });
+    expect(result.summary).toEqual(summary);
+    expect(mockSummaryRepository.findByWallet).toHaveBeenCalledWith(wallet);
+  });
+
+  it('returns zero summary when repository has no row', async () => {
+    const mockPositionsRepository: Pick<
+      PortfolioPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue([]) };
+    const mockClosedPositionsRepository: Pick<
+      PortfolioClosedPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue([]) };
+    const mockSummaryRepository: Pick<
+      PortfolioSummaryRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(null) };
+    const service = new PortfolioService(
+      mockPositionsRepository as PortfolioPositionsRepository,
+      mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
+      mockSummaryRepository as PortfolioSummaryRepository,
+    );
+
+    const result = await service.getSummary({ safe_wallet_address: wallet });
+    expect(result.summary).toEqual({
+      balance: 0,
+      open_exposure: 0,
+      unrealized_pnl: 0,
+      realized_30d: 0,
+      rewards_earned: 0,
+      rewards_pct_of_pnl: null,
+      deployment_rate_pct: null,
+      balance_last_updated: null,
+      open_exposure_last_updated: null,
+      unrealized_pnl_last_updated: null,
+      realized_30d_last_updated: null,
+      rewards_last_updated: null,
     });
   });
 });

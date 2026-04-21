@@ -20,7 +20,7 @@ const POSITION_SORT_COLUMN_MAP: Record<string, string> = {
   exposure: 'current_value',
   condition_id: 'condition_id',
   outcome_token_id: 'asset',
-  proxy_wallet: 'proxy_wallet',
+  safe_wallet_address: 'safe_wallet_address',
   slug: 'slug',
   icon: 'icon',
   event_id: 'event_id',
@@ -48,7 +48,7 @@ export class PortfolioPositionsRepository {
     query: GetPortfolioPositionsQueryDto,
   ): Promise<PortfolioPosition[]> {
     const values: unknown[] = [query.wallet];
-    const whereClause = 'WHERE proxy_wallet = $1';
+    const whereClause = 'WHERE safe_wallet_address = $1';
 
     if (!query.sort_by) {
       const sql = `
@@ -63,7 +63,7 @@ export class PortfolioPositionsRepository {
         SELECT p.*
         FROM positions p
         LEFT JOIN category_exposure ce ON ce.category = p.category
-        ${whereClause.replace('proxy_wallet', 'p.proxy_wallet')}
+        ${whereClause.replace('safe_wallet_address', 'p.safe_wallet_address')}
         ORDER BY COALESCE(ce.total_exposure, 0) DESC, COALESCE(p.cost_basis, 0) DESC
       `;
       const result = await this.pool.query(sql, values);
@@ -136,7 +136,7 @@ function mapPositionRow(row: Record<string, unknown>): PortfolioPosition {
     exposure: toNumber(row.current_value || row.cost_basis),
     condition_id: toString(row.condition_id),
     outcome_token_id: toString(row.asset),
-    proxy_wallet: toString(row.proxy_wallet),
+    safe_wallet_address: toString(row.safe_wallet_address),
     slug: toString(row.slug),
     icon: toString(row.icon),
     event_id: toString(row.event_id),
