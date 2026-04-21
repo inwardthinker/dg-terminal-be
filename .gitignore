@@ -20,3 +20,5 @@ pnpm-debug.log*
 .cursor/
 # Nest artifacts
 .nestjs-cli.json
+
+db-info
