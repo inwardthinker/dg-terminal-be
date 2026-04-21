@@ -44,7 +44,9 @@ export class WorkerDb {
   async upsertPositions(rows: PositionUpsertRow[]): Promise<void> {
     if (rows.length === 0) return;
     const sortedRows = [...rows].sort((a, b) => {
-      const walletCompare = a.proxyWallet.localeCompare(b.proxyWallet);
+      const walletCompare = a.safeWalletAddress.localeCompare(
+        b.safeWalletAddress,
+      );
       if (walletCompare !== 0) return walletCompare;
       return a.asset.localeCompare(b.asset);
     });
@@ -57,7 +59,7 @@ export class WorkerDb {
           await client.query(
             `
           INSERT INTO positions (
-            user_id, proxy_wallet, asset, condition_id, market_name, category, venue, side,
+            user_id, safe_wallet_address, asset, condition_id, market_name, category, venue, side,
             icon, end_date, redeemable, shares, avg_entry_price, cost_basis, current_price,
             unrealized_pnl, unrealized_pnl_pct, fair_value, fair_value_updated_at, last_rest_sync,
             last_updated, updated_at, slug, event_id, event_slug, outcome_index, opposite_outcome,
@@ -71,7 +73,7 @@ export class WorkerDb {
             $26,$27,$28,$29,$30,$31,
             $32,$33,$34
           )
-          ON CONFLICT (proxy_wallet, asset) DO UPDATE SET
+          ON CONFLICT (safe_wallet_address, asset) DO UPDATE SET
             market_name = EXCLUDED.market_name,
             category = EXCLUDED.category,
             venue = EXCLUDED.venue,
@@ -105,7 +107,7 @@ export class WorkerDb {
           `,
             [
               row.userId,
-              row.proxyWallet,
+              row.safeWalletAddress,
               row.asset,
               row.conditionId,
               row.marketName,
@@ -154,13 +156,14 @@ export class WorkerDb {
   async deletePositionOrphans(wallet: string, assets: string[]): Promise<void> {
     await this.withDeadlockRetry(async () => {
       if (assets.length === 0) {
-        await this.pool.query('DELETE FROM positions WHERE proxy_wallet = $1', [
-          wallet,
-        ]);
+        await this.pool.query(
+          'DELETE FROM positions WHERE safe_wallet_address = $1',
+          [wallet],
+        );
         return;
       }
       await this.pool.query(
-        'DELETE FROM positions WHERE proxy_wallet = $1 AND asset != ALL($2::text[])',
+        'DELETE FROM positions WHERE safe_wallet_address = $1 AND asset != ALL($2::text[])',
         [wallet, assets],
       );
     }, 'deletePositionOrphans');
@@ -176,7 +179,7 @@ export class WorkerDb {
           await client.query(
             `
         INSERT INTO trade_history (
-            user_id, proxy_wallet, trade_id, trade_time, market_name, side, venue, category,
+            user_id, safe_wallet_address, trade_id, trade_time, market_name, side, venue, category,
             entry_price, exit_price, cost_basis, shares, outcome, realized_pnl, rewards_earned,
             is_settlement, is_manual_close, last_sync, updated_at, asset, condition_id, slug, icon,
             event_id, event_slug, outcome_index, opposite_outcome, opposite_asset
@@ -214,7 +217,7 @@ export class WorkerDb {
           `,
             [
               row.userId,
-              row.proxyWallet,
+              row.safeWalletAddress,
               row.tradeId,
               row.tradeTime,
               row.marketName,
@@ -268,7 +271,7 @@ export class WorkerDb {
             last_ws_update = NOW(),
             last_updated = NOW(),
             updated_at = NOW()
-        WHERE proxy_wallet = $1 AND asset = $2
+        WHERE safe_wallet_address = $1 AND asset = $2
         `,
         [wallet, asset, currentPrice, unrealizedPnl, unrealizedPnlPct],
       );
@@ -317,7 +320,7 @@ function sleep(ms: number): Promise<void> {
 
 export type PositionUpsertRow = {
   userId: number;
-  proxyWallet: string;
+  safeWalletAddress: string;
   asset: string;
   conditionId: string;
   marketName: string;
@@ -350,7 +353,7 @@ export type PositionUpsertRow = {
 
 export type TradeHistoryUpsertRow = {
   userId: number;
-  proxyWallet: string;
+  safeWalletAddress: string;
   tradeId: string;
   tradeTime: Date;
   marketName: string;

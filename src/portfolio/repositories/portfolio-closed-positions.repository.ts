@@ -22,7 +22,7 @@ const CLOSED_SORT_SQL_MAP: Record<string, string> = {
   closed_at: 'trade_time',
   condition_id: 'condition_id',
   outcome_token_id: 'asset',
-  proxy_wallet: 'proxy_wallet',
+  safe_wallet_address: 'safe_wallet_address',
   slug: 'slug',
   icon: 'icon',
   event_id: 'event_id',
@@ -44,7 +44,7 @@ export class PortfolioClosedPositionsRepository {
       query.limit ?? 30,
       query.offset ?? 0,
     ];
-    const whereClause = 'WHERE proxy_wallet = $1';
+    const whereClause = 'WHERE safe_wallet_address = $1';
 
     if (!query.sort_by) {
       const sql = `
@@ -57,7 +57,7 @@ export class PortfolioClosedPositionsRepository {
         SELECT t.*
         FROM trade_history t
         LEFT JOIN category_pnl cp ON cp.category = t.category
-        ${whereClause.replace('proxy_wallet', 't.proxy_wallet')}
+        ${whereClause.replace('safe_wallet_address', 't.safe_wallet_address')}
         ORDER BY COALESCE(cp.total_realized_pnl, 0) DESC, COALESCE(t.realized_pnl, 0) DESC
         LIMIT $2 OFFSET $3
       `;
@@ -135,7 +135,7 @@ function mapClosedRow(row: Record<string, unknown>): PortfolioClosedPosition {
       : '',
     condition_id: toString(row.condition_id),
     outcome_token_id: toString(row.asset),
-    proxy_wallet: toString(row.proxy_wallet),
+    safe_wallet_address: toString(row.safe_wallet_address),
     slug: toString(row.slug),
     icon: toString(row.icon),
     event_id: toString(row.event_id),

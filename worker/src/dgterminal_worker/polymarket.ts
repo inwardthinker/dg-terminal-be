@@ -5,78 +5,106 @@ export type ClosedPositionApiRow = Record<string, unknown>;
 export type ActivityRow = Record<string, unknown>;
 
 export class PolymarketDataApi {
-  constructor(private readonly config: WorkerConfig) {}
+  private readonly dataApiBaseUrl: string;
+  private static readonly REQUEST_TIMEOUT_MS = 15_000;
+
+  constructor(private readonly config: WorkerConfig) {
+    this.dataApiBaseUrl = this.config.polymarket.dataApiBaseUrl.replace(
+      /\/$/,
+      '',
+    );
+  }
 
   async getSnapshot(wallet: string): Promise<number> {
-    const url = new URL(
-      `${this.config.polymarket.dataApiBaseUrl.replace(/\/$/, '')}/v1/accounting/snapshot`,
-    );
-    url.searchParams.set('user', wallet);
-    const response = await fetch(url.toString(), {
-      signal: AbortSignal.timeout(15_000),
-    });
+    const url = this.buildUrl('/v1/accounting/snapshot', { user: wallet });
+    const response = await fetch(url.toString(), this.requestInit());
     if (!response.ok) return 0;
+
     const payload: unknown = await response.json();
-    if (payload && typeof payload === 'object') {
-      const data = payload as Record<string, unknown>;
-      const balance =
-        data.balance ?? data.portfolioValue ?? data.totalValue ?? data.equity;
-      if (typeof balance === 'number') return balance;
-      if (typeof balance === 'string') return Number.parseFloat(balance) || 0;
-    }
-    return 0;
+    if (!isRecord(payload)) return 0;
+
+    const balance =
+      payload.balance ??
+      payload.portfolioValue ??
+      payload.totalValue ??
+      payload.equity;
+    return toNumber(balance);
   }
 
   async getActivity(wallet: string): Promise<ActivityRow[]> {
-    const url = new URL(
-      `${this.config.polymarket.dataApiBaseUrl.replace(/\/$/, '')}/activity`,
-    );
-    url.searchParams.set('user', wallet);
-    url.searchParams.set('limit', '500');
+    const url = this.buildUrl('/activity', {
+      user: wallet,
+      limit: '500',
+    });
     return this.fetchArray(url.toString());
   }
 
   async getOpenPositions(wallet: string): Promise<OpenPositionApiRow[]> {
-    const url = new URL(
-      `${this.config.polymarket.dataApiBaseUrl.replace(/\/$/, '')}/positions`,
-    );
-    url.searchParams.set('user', wallet);
-    url.searchParams.set('sortBy', 'CURRENT');
-    url.searchParams.set('sortDirection', 'DESC');
-    url.searchParams.set('sizeThreshold', '0.1');
-    url.searchParams.set('limit', '500');
-    url.searchParams.set('offset', '0');
+    const url = this.buildUrl('/positions', {
+      user: wallet,
+      sortBy: 'CURRENT',
+      sortDirection: 'DESC',
+      sizeThreshold: '0.1',
+      limit: '500',
+      offset: '0',
+    });
     return this.fetchArray(url.toString());
   }
 
   async getClosedPositions(wallet: string): Promise<ClosedPositionApiRow[]> {
-    const url = new URL(
-      `${this.config.polymarket.dataApiBaseUrl.replace(/\/$/, '')}/closed-positions`,
-    );
-    url.searchParams.set('user', wallet);
-    url.searchParams.set('sortBy', 'realizedpnl');
-    url.searchParams.set('sortDirection', 'DESC');
-    url.searchParams.set('limit', '500');
-    url.searchParams.set('offset', '0');
+    const url = this.buildUrl('/closed-positions', {
+      user: wallet,
+      sortBy: 'realizedpnl',
+      sortDirection: 'DESC',
+      limit: '500',
+      offset: '0',
+    });
     return this.fetchArray(url.toString());
   }
 
+  private buildUrl(path: string, query: Record<string, string>): URL {
+    const url = new URL(`${this.dataApiBaseUrl}${path}`);
+    for (const [key, value] of Object.entries(query)) {
+      url.searchParams.set(key, value);
+    }
+    return url;
+  }
+
+  private requestInit(): RequestInit {
+    return {
+      signal: AbortSignal.timeout(PolymarketDataApi.REQUEST_TIMEOUT_MS),
+    };
+  }
+
   private async fetchArray(url: string): Promise<Record<string, unknown>[]> {
-    const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    const response = await fetch(url, this.requestInit());
     if (!response.ok) return [];
+
     const payload: unknown = await response.json();
     if (Array.isArray(payload)) {
       return payload as Record<string, unknown>[];
     }
-    if (payload && typeof payload === 'object') {
-      const maybeData = payload as { data?: unknown; positions?: unknown };
-      if (Array.isArray(maybeData.data)) {
-        return maybeData.data as Record<string, unknown>[];
-      }
-      if (Array.isArray(maybeData.positions)) {
-        return maybeData.positions as Record<string, unknown>[];
-      }
+    if (!isRecord(payload)) return [];
+
+    if (Array.isArray(payload.data)) {
+      return payload.data as Record<string, unknown>[];
+    }
+    if (Array.isArray(payload.positions)) {
+      return payload.positions as Record<string, unknown>[];
     }
     return [];
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function toNumber(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
