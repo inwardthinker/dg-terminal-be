@@ -2,6 +2,7 @@ import { PortfolioService } from './portfolio.service';
 import { PortfolioClosedPositionsRepository } from './repositories/portfolio-closed-positions.repository';
 import { PortfolioPositionsRepository } from './repositories/portfolio-positions.repository';
 import { PortfolioSummaryRepository } from './repositories/portfolio-summary.repository';
+import { PortfolioTradesRepository } from './repositories/portfolio-trades.repository';
 import { PortfolioClosedPosition } from './types/portfolio-closed-position.type';
 import { PortfolioPosition } from './types/portfolio-position.type';
 
@@ -182,6 +183,14 @@ const closedSample: PortfolioClosedPosition[] = [
   },
 ];
 
+const tradesSample = [{ id: 'trade-1' }, { id: 'trade-2' }];
+const createTradesRepositoryMock = (): Pick<
+  PortfolioTradesRepository,
+  'findByWallet'
+> => ({
+  findByWallet: jest.fn().mockResolvedValue(tradesSample),
+});
+
 describe('PortfolioService', () => {
   const wallet = testWallet;
 
@@ -204,6 +213,7 @@ describe('PortfolioService', () => {
       mockPositionsRepository as PortfolioPositionsRepository,
       mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
       mockSummaryRepository as PortfolioSummaryRepository,
+      createTradesRepositoryMock() as PortfolioTradesRepository,
     );
 
     const result = await service.getPositions({ wallet });
@@ -230,6 +240,7 @@ describe('PortfolioService', () => {
       mockPositionsRepository as PortfolioPositionsRepository,
       mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
       mockSummaryRepository as PortfolioSummaryRepository,
+      createTradesRepositoryMock() as PortfolioTradesRepository,
     );
     await service.getPositions({ wallet });
 
@@ -257,6 +268,7 @@ describe('PortfolioService', () => {
       mockPositionsRepository as PortfolioPositionsRepository,
       mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
       mockSummaryRepository as PortfolioSummaryRepository,
+      createTradesRepositoryMock() as PortfolioTradesRepository,
     );
 
     const result = await service.getClosedPositions({ wallet });
@@ -286,6 +298,7 @@ describe('PortfolioService', () => {
       mockPositionsRepository as PortfolioPositionsRepository,
       mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
       mockSummaryRepository as PortfolioSummaryRepository,
+      createTradesRepositoryMock() as PortfolioTradesRepository,
     );
 
     await service.getClosedPositions({
@@ -332,6 +345,7 @@ describe('PortfolioService', () => {
       mockPositionsRepository as PortfolioPositionsRepository,
       mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
       mockSummaryRepository as PortfolioSummaryRepository,
+      createTradesRepositoryMock() as PortfolioTradesRepository,
     );
 
     const result = await service.getSummary({ safe_wallet_address: wallet });
@@ -356,6 +370,7 @@ describe('PortfolioService', () => {
       mockPositionsRepository as PortfolioPositionsRepository,
       mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
       mockSummaryRepository as PortfolioSummaryRepository,
+      createTradesRepositoryMock() as PortfolioTradesRepository,
     );
 
     const result = await service.getSummary({ safe_wallet_address: wallet });
@@ -373,5 +388,78 @@ describe('PortfolioService', () => {
       realized_30d_last_updated: null,
       rewards_last_updated: null,
     });
+  });
+
+  it('returns trades and forwards query params', async () => {
+    const query = {
+      wallet,
+      period: '7d' as const,
+      page: 2,
+      per_page: 25,
+      sort_by: 'created_at',
+      sort_dir: 'desc' as const,
+      outcome: 'YES',
+    };
+    const mockTradesRepository: Pick<
+      PortfolioTradesRepository,
+      'findByWallet'
+    > = {
+      findByWallet: jest.fn().mockResolvedValue(tradesSample),
+    };
+    const mockPositionsRepository: Pick<
+      PortfolioPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(sample) };
+    const mockClosedPositionsRepository: Pick<
+      PortfolioClosedPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(closedSample) };
+    const mockSummaryRepository: Pick<
+      PortfolioSummaryRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(null) };
+
+    const service = new PortfolioService(
+      mockPositionsRepository as PortfolioPositionsRepository,
+      mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
+      mockSummaryRepository as PortfolioSummaryRepository,
+      mockTradesRepository as PortfolioTradesRepository,
+    );
+
+    const result = await service.getTrades(query);
+
+    expect(result.trades).toEqual(tradesSample);
+    expect(mockTradesRepository.findByWallet).toHaveBeenCalledWith(query);
+  });
+
+  it('returns empty trades when repository throws', async () => {
+    const mockTradesRepository: Pick<
+      PortfolioTradesRepository,
+      'findByWallet'
+    > = {
+      findByWallet: jest.fn().mockRejectedValue(new Error('boom')),
+    };
+    const mockPositionsRepository: Pick<
+      PortfolioPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(sample) };
+    const mockClosedPositionsRepository: Pick<
+      PortfolioClosedPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(closedSample) };
+    const mockSummaryRepository: Pick<
+      PortfolioSummaryRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(null) };
+
+    const service = new PortfolioService(
+      mockPositionsRepository as PortfolioPositionsRepository,
+      mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
+      mockSummaryRepository as PortfolioSummaryRepository,
+      mockTradesRepository as PortfolioTradesRepository,
+    );
+
+    const result = await service.getTrades({ wallet });
+    expect(result).toEqual({ trades: [] });
   });
 });

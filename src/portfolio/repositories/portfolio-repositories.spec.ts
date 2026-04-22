@@ -1,6 +1,7 @@
 import { PortfolioClosedPositionsRepository } from './portfolio-closed-positions.repository';
 import { PortfolioPositionsRepository } from './portfolio-positions.repository';
 import { PortfolioSummaryRepository } from './portfolio-summary.repository';
+import { PortfolioTradesRepository } from './portfolio-trades.repository';
 
 type MockPool = {
   query: jest.Mock;
@@ -54,5 +55,112 @@ describe('Portfolio repositories sort mappings', () => {
     expect(sql).toContain('FROM portfolio_summary');
     expect(sql).toContain('COALESCE(SUM(balance), 0)');
     expect(sql).toContain('MIN(balance_last_updated)');
+  });
+
+  it('builds trades API query with defaults and filters', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: jest
+        .fn()
+        .mockResolvedValue([{ id: 'trade-1', type: 'TRADE', usdcSize: 12.34 }]),
+    } as unknown as Response);
+
+    const configService = {
+      get: jest.fn((key: string, fallback?: string) => {
+        if (key === 'POLYMARKET_DATA_API_URL') {
+          return 'https://data-api.polymarket.com';
+        }
+        return fallback ?? '';
+      }),
+    };
+    const repo = new PortfolioTradesRepository(configService as never);
+
+    await repo.findByWallet({
+      wallet: '0x1111111111111111111111111111111111111111',
+      period: '30d',
+      page: 3,
+      per_page: 25,
+      limit: 30,
+      offset: 0,
+      start: 1776191400,
+      end: 1776882600,
+      excludeDepositsWithdrawals: false,
+      market:
+        '0xaa47997fba2027b59efd78b32bef2d073f19f1feec236c83754d90d8be39cbea',
+      eventId: '12345',
+      type: 'TRADE,REDEEM',
+      side: 'BUY',
+      sort_by: 'created_at',
+      sort_dir: 'asc',
+      sortBy: 'TIMESTAMP',
+      sortDirection: 'DESC',
+      outcome: 'YES',
+    });
+
+    const url = ((fetchMock.mock.calls[0] as unknown[])[0] as string) ?? '';
+    expect(url).toContain('/activity?');
+    expect(url).toContain('user=0x1111111111111111111111111111111111111111');
+    expect(url).toContain('limit=30');
+    expect(url).toContain('offset=0');
+    expect(url).toContain('page=3');
+    expect(url).toContain('per_page=25');
+    expect(url).toContain('period=30d');
+    expect(url).toContain('start=1776191400');
+    expect(url).toContain('end=1776882600');
+    expect(url).toContain('excludeDepositsWithdrawals=false');
+    expect(url).toContain(
+      'market=0xaa47997fba2027b59efd78b32bef2d073f19f1feec236c83754d90d8be39cbea',
+    );
+    expect(url).toContain('eventId=12345');
+    expect(url).toContain('type=TRADE%2CREDEEM');
+    expect(url).toContain('side=BUY');
+    expect(url).toContain('sortBy=TIMESTAMP');
+    expect(url).toContain('sortDirection=DESC');
+    expect(url).toContain('sort_by=created_at');
+    expect(url).toContain('sort_dir=asc');
+    expect(url).toContain('outcome=YES');
+    const payload = await repo.findByWallet({
+      wallet: '0x1111111111111111111111111111111111111111',
+    });
+    expect(Array.isArray(payload)).toBe(true);
+    expect(payload).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'TRADE',
+          usdcSize: 12.34,
+        }),
+      ]),
+    );
+
+    fetchMock.mockRestore();
+  });
+
+  it('maps legacy sort params to Polymarket activity enums', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue([]),
+    } as unknown as Response);
+
+    const configService = {
+      get: jest.fn((key: string, fallback?: string) => {
+        if (key === 'POLYMARKET_DATA_API_URL') {
+          return 'https://data-api.polymarket.com';
+        }
+        return fallback ?? '';
+      }),
+    };
+    const repo = new PortfolioTradesRepository(configService as never);
+
+    await repo.findByWallet({
+      wallet: '0x1111111111111111111111111111111111111111',
+      sort_by: 'created_at',
+      sort_dir: 'desc',
+    });
+
+    const url = ((fetchMock.mock.calls[0] as unknown[])[0] as string) ?? '';
+    expect(url).toContain('sortBy=TIMESTAMP');
+    expect(url).toContain('sortDirection=DESC');
+
+    fetchMock.mockRestore();
   });
 });

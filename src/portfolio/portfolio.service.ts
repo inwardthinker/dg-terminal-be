@@ -2,12 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { GetPortfolioClosedPositionsQueryDto } from './dto/get-portfolio-closed-positions.query.dto';
 import { GetPortfolioPositionsQueryDto } from './dto/get-portfolio-positions.query.dto';
 import { GetPortfolioSummaryQueryDto } from './dto/get-portfolio-summary.query.dto';
+import { GetPortfolioTradesQueryDto } from './dto/get-portfolio-trades.query.dto';
 import { PortfolioSummaryResponseDto } from './dto/portfolio-summary.response.dto';
 import { PortfolioClosedPositionsRepository } from './repositories/portfolio-closed-positions.repository';
 import { PortfolioPositionsRepository } from './repositories/portfolio-positions.repository';
 import { PortfolioSummaryRepository } from './repositories/portfolio-summary.repository';
+import { PortfolioTradesRepository } from './repositories/portfolio-trades.repository';
 import { PortfolioClosedPosition } from './types/portfolio-closed-position.type';
 import { PortfolioPosition } from './types/portfolio-position.type';
+import { PortfolioTrades } from './types/portfolio-trades.type';
 
 @Injectable()
 export class PortfolioService {
@@ -15,6 +18,7 @@ export class PortfolioService {
     private readonly positionsRepository: PortfolioPositionsRepository,
     private readonly closedPositionsRepository: PortfolioClosedPositionsRepository,
     private readonly summaryRepository: PortfolioSummaryRepository,
+    private readonly tradesRepository: PortfolioTradesRepository,
   ) {}
 
   async getPositions(query: GetPortfolioPositionsQueryDto): Promise<{
@@ -83,6 +87,16 @@ export class PortfolioService {
           rewards_last_updated: null,
         },
       };
+    }
+  }
+
+  async getTrades(query: GetPortfolioTradesQueryDto): Promise<{
+    trades: PortfolioTrades;
+  }> {
+    try {
+      return { trades: await this.tradesRepository.findByWallet(query) };
+    } catch {
+      return { trades: [] };
     }
   }
 }
