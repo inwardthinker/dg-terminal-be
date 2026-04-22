@@ -100,7 +100,7 @@ export class PortfolioService {
     try {
       const closedPositions = await this.closedPositionsRepository.findByWallet(
         {
-          wallet: query.wallet,
+          walletAddress: query.walletAddress,
           limit: 500,
           offset: 0,
           sort_by: 'closed_at',

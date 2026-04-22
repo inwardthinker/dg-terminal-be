@@ -12,5 +12,5 @@ export class GetPortfolioPositionsQueryDto {
   sort_dir?: 'asc' | 'desc';
 
   @Matches(/^0x[a-fA-F0-9]{40}$/)
-  wallet!: string;
+  walletAddress!: string;
 }

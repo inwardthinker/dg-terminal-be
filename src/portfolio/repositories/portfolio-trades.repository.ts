@@ -50,7 +50,7 @@ export class PortfolioTradesRepository {
         : undefined;
 
     const params = new URLSearchParams({
-      user: query.wallet,
+      user: query.walletAddress,
       limit: String(limit),
       offset: String(offset),
     });

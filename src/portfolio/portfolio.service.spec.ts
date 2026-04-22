@@ -216,7 +216,7 @@ describe('PortfolioService', () => {
       createTradesRepositoryMock() as PortfolioTradesRepository,
     );
 
-    const result = await service.getPositions({ wallet });
+    const result = await service.getPositions({ walletAddress: wallet });
 
     expect(result.positions).toHaveLength(4);
   });
@@ -242,10 +242,10 @@ describe('PortfolioService', () => {
       mockSummaryRepository as PortfolioSummaryRepository,
       createTradesRepositoryMock() as PortfolioTradesRepository,
     );
-    await service.getPositions({ wallet });
+    await service.getPositions({ walletAddress: wallet });
 
     expect(mockPositionsRepository.findByWallet).toHaveBeenCalledWith({
-      wallet,
+      walletAddress: wallet,
     });
   });
 
@@ -271,11 +271,11 @@ describe('PortfolioService', () => {
       createTradesRepositoryMock() as PortfolioTradesRepository,
     );
 
-    const result = await service.getClosedPositions({ wallet });
+    const result = await service.getClosedPositions({ walletAddress: wallet });
 
     expect(result.closed_positions).toHaveLength(3);
     expect(mockClosedPositionsRepository.findByWallet).toHaveBeenCalledWith({
-      wallet,
+      walletAddress: wallet,
     });
   });
 
@@ -302,13 +302,13 @@ describe('PortfolioService', () => {
     );
 
     await service.getClosedPositions({
-      wallet,
+      walletAddress: wallet,
       limit: 50,
       offset: 10,
     });
 
     expect(mockClosedPositionsRepository.findByWallet).toHaveBeenCalledWith({
-      wallet,
+      walletAddress: wallet,
       limit: 50,
       offset: 10,
     });
@@ -392,7 +392,7 @@ describe('PortfolioService', () => {
 
   it('returns normalized settled trades from closed positions', async () => {
     const query = {
-      wallet,
+      walletAddress: wallet,
       period: 'all' as const,
       page: 1,
       per_page: 1,
@@ -506,7 +506,10 @@ describe('PortfolioService', () => {
       mockTradesRepository as PortfolioTradesRepository,
     );
 
-    const result = await service.getTrades({ wallet, period: 'all' });
+    const result = await service.getTrades({
+      walletAddress: wallet,
+      period: 'all',
+    });
     const first = (result.trades as Array<Record<string, unknown>>)[0];
     expect(first.pnl).toBe(42);
     expect(first.outcome).toBe('WON');
@@ -514,7 +517,7 @@ describe('PortfolioService', () => {
     expect(result.total_count).toBe(1);
     expect(result.total_pages).toBe(1);
     expect(mockClosedPositionsRepository.findByWallet).toHaveBeenCalledWith({
-      wallet,
+      walletAddress: wallet,
       limit: 500,
       offset: 0,
       sort_by: 'closed_at',
@@ -572,7 +575,10 @@ describe('PortfolioService', () => {
       mockTradesRepository as PortfolioTradesRepository,
     );
 
-    const result = await service.getTrades({ wallet, period: 'all' });
+    const result = await service.getTrades({
+      walletAddress: wallet,
+      period: 'all',
+    });
     const first = (result.trades as Array<Record<string, unknown>>)[0];
     expect(first.pnl).toBe(-3.5);
     expect(first.outcome).toBe('LOST');
@@ -610,7 +616,7 @@ describe('PortfolioService', () => {
       mockTradesRepository as PortfolioTradesRepository,
     );
 
-    const result = await erroringService.getTrades({ wallet });
+    const result = await erroringService.getTrades({ walletAddress: wallet });
     expect(result).toEqual({
       trades: [],
       page: 1,

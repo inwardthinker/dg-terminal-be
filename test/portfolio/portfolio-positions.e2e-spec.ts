@@ -122,23 +122,23 @@ describe('Portfolio Positions (e2e)', () => {
 
   it('rejects invalid sort_dir', async () => {
     await request(app.getHttpServer())
-      .get(`/api/portfolio/positions?wallet=${wallet}&sort_dir=downward`)
+      .get(`/api/portfolio/positions?walletAddress=${wallet}&sort_dir=downward`)
       .set(authHeader)
       .expect(400);
   });
 
-  it('rejects invalid wallet query format', async () => {
+  it('rejects invalid walletAddress query format', async () => {
     await request(app.getHttpServer())
-      .get('/api/portfolio/positions?wallet=not-an-evm-address')
+      .get('/api/portfolio/positions?walletAddress=not-an-evm-address')
       .set(authHeader)
       .expect(400);
     await request(app.getHttpServer())
-      .get('/api/portfolio/trades?wallet=not-an-evm-address')
+      .get('/api/portfolio/trades?walletAddress=not-an-evm-address')
       .set(authHeader)
       .expect(400);
   });
 
-  it('rejects missing wallet query param', async () => {
+  it('rejects missing walletAddress query param', async () => {
     await request(app.getHttpServer())
       .get('/api/portfolio/positions')
       .set(authHeader)
@@ -159,7 +159,7 @@ describe('Portfolio Positions (e2e)', () => {
 
   it('rejects invalid period for trades endpoint', async () => {
     await request(app.getHttpServer())
-      .get(`/api/portfolio/trades?wallet=${wallet}&period=invalid`)
+      .get(`/api/portfolio/trades?walletAddress=${wallet}&period=invalid`)
       .set(authHeader)
       .expect(400);
   });
@@ -174,7 +174,7 @@ describe('Portfolio Positions (e2e)', () => {
   it('sorts by unrealized_pnl asc when requested', async () => {
     const response = await request(app.getHttpServer())
       .get(
-        `/api/portfolio/positions?wallet=${wallet}&sort_by=unrealized_pnl&sort_dir=asc`,
+        `/api/portfolio/positions?walletAddress=${wallet}&sort_by=unrealized_pnl&sort_dir=asc`,
       )
       .set(authHeader)
       .expect(200);
@@ -189,7 +189,7 @@ describe('Portfolio Positions (e2e)', () => {
 
   it('returns 200 and positions shape when authenticated', async () => {
     const response = await request(app.getHttpServer())
-      .get(`/api/portfolio/positions?wallet=${wallet}`)
+      .get(`/api/portfolio/positions?walletAddress=${wallet}`)
       .set(authHeader)
       .expect(200);
     const body = toOpenPositionsResponse(response.body as unknown);
@@ -226,7 +226,7 @@ describe('Portfolio Positions (e2e)', () => {
 
   it('returns 200 and closed_positions shape when authenticated', async () => {
     const response = await request(app.getHttpServer())
-      .get(`/api/portfolio/closed-positions?wallet=${wallet}`)
+      .get(`/api/portfolio/closed-positions?walletAddress=${wallet}`)
       .set(authHeader)
       .expect(200);
     const body = toClosedPositionsResponse(response.body as unknown);
@@ -305,7 +305,7 @@ describe('Portfolio Positions (e2e)', () => {
   it('returns 200 and trades wrapper shape when authenticated', async () => {
     const response = await request(app.getHttpServer())
       .get(
-        `/api/portfolio/trades?wallet=${wallet}&period=7d&page=1&sort_by=created_at&sort_dir=desc`,
+        `/api/portfolio/trades?walletAddress=${wallet}&period=7d&page=1&sort_by=created_at&sort_dir=desc`,
       )
       .set(authHeader)
       .expect(200);

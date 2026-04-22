@@ -13,7 +13,7 @@ const TRADES_PERIODS = ['1d', '7d', '30d', 'all'] as const;
 
 export class GetPortfolioTradesQueryDto {
   @Matches(/^0x[a-fA-F0-9]{40}$/)
-  wallet!: string;
+  walletAddress!: string;
 
   @IsOptional()
   @IsIn(TRADES_PERIODS)

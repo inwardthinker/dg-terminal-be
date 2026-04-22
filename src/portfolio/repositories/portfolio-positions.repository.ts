@@ -47,7 +47,7 @@ export class PortfolioPositionsRepository {
   async findByWallet(
     query: GetPortfolioPositionsQueryDto,
   ): Promise<PortfolioPosition[]> {
-    const values: unknown[] = [query.wallet];
+    const values: unknown[] = [query.walletAddress];
     const whereClause = 'WHERE safe_wallet_address = $1';
 
     if (!query.sort_by) {

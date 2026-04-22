@@ -40,7 +40,7 @@ export class PortfolioClosedPositionsRepository {
     query: GetPortfolioClosedPositionsQueryDto,
   ): Promise<PortfolioClosedPosition[]> {
     const values: unknown[] = [
-      query.wallet,
+      query.walletAddress,
       query.limit ?? 30,
       query.offset ?? 0,
     ];

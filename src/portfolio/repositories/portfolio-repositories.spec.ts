@@ -15,7 +15,7 @@ describe('Portfolio repositories sort mappings', () => {
     const repo = new PortfolioPositionsRepository(pool as never);
 
     await repo.findByWallet({
-      wallet: '0x1111111111111111111111111111111111111111',
+      walletAddress: '0x1111111111111111111111111111111111111111',
       sort_by: 'outcome_token_id',
       sort_dir: 'asc',
     });
@@ -32,7 +32,7 @@ describe('Portfolio repositories sort mappings', () => {
     const repo = new PortfolioClosedPositionsRepository(pool as never);
 
     await repo.findByWallet({
-      wallet: '0x1111111111111111111111111111111111111111',
+      walletAddress: '0x1111111111111111111111111111111111111111',
       sort_by: 'closed_at',
       sort_dir: 'desc',
     });
@@ -82,7 +82,7 @@ describe('Portfolio repositories sort mappings', () => {
     const repo = new PortfolioTradesRepository(configService as never);
 
     await repo.findByWallet({
-      wallet: '0x1111111111111111111111111111111111111111',
+      walletAddress: '0x1111111111111111111111111111111111111111',
       period: '30d',
       page: 3,
       per_page: 25,
@@ -126,7 +126,7 @@ describe('Portfolio repositories sort mappings', () => {
     expect(url).toContain('sort_dir=asc');
     expect(url).toContain('outcome=YES');
     const payload = await repo.findByWallet({
-      wallet: '0x1111111111111111111111111111111111111111',
+      walletAddress: '0x1111111111111111111111111111111111111111',
     });
     expect(Array.isArray(payload)).toBe(true);
     const first = payload[0] as Record<string, unknown>;
@@ -162,7 +162,7 @@ describe('Portfolio repositories sort mappings', () => {
     const repo = new PortfolioTradesRepository(configService as never);
 
     await repo.findByWallet({
-      wallet: '0x1111111111111111111111111111111111111111',
+      walletAddress: '0x1111111111111111111111111111111111111111',
       sort_by: 'created_at',
       sort_dir: 'desc',
     });
@@ -191,7 +191,7 @@ describe('Portfolio repositories sort mappings', () => {
     const repo = new PortfolioTradesRepository(configService as never);
 
     await repo.findByWallet({
-      wallet: '0x1111111111111111111111111111111111111111',
+      walletAddress: '0x1111111111111111111111111111111111111111',
     });
 
     const url = ((fetchMock.mock.calls[0] as unknown[])[0] as string) ?? '';
@@ -217,7 +217,7 @@ describe('Portfolio repositories sort mappings', () => {
     const repo = new PortfolioTradesRepository(configService as never);
 
     const payload = await repo.findByWallet({
-      wallet: '0x1111111111111111111111111111111111111111',
+      walletAddress: '0x1111111111111111111111111111111111111111',
     });
 
     expect(payload).toEqual(

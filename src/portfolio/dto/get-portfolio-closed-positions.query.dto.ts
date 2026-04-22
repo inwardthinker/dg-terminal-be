@@ -26,5 +26,5 @@ export class GetPortfolioClosedPositionsQueryDto {
   offset?: number;
 
   @Matches(/^0x[a-fA-F0-9]{40}$/)
-  wallet!: string;
+  walletAddress!: string;
 }
