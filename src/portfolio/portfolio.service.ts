@@ -1,262 +1,452 @@
-import { Injectable } from '@nestjs/common';
-import { GetPortfolioClosedPositionsQueryDto } from './dto/get-portfolio-closed-positions.query.dto';
-import { GetPortfolioPositionsQueryDto } from './dto/get-portfolio-positions.query.dto';
-import { GetPortfolioSummaryQueryDto } from './dto/get-portfolio-summary.query.dto';
-import { GetPortfolioTradesQueryDto } from './dto/get-portfolio-trades.query.dto';
-import { PortfolioSummaryResponseDto } from './dto/portfolio-summary.response.dto';
-import { PortfolioClosedPositionsRepository } from './repositories/portfolio-closed-positions.repository';
-import { PortfolioPositionsRepository } from './repositories/portfolio-positions.repository';
-import { PortfolioSummaryRepository } from './repositories/portfolio-summary.repository';
-import { PortfolioTradesRepository } from './repositories/portfolio-trades.repository';
-import { PortfolioClosedPosition } from './types/portfolio-closed-position.type';
-import { PortfolioPosition } from './types/portfolio-position.type';
-import { PortfolioTrade, PortfolioTrades } from './types/portfolio-trades.type';
+import {
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+  OnModuleDestroy,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Pool, PoolClient } from 'pg';
+import {
+  BalanceSnapshot,
+  BalanceSnapshotRow,
+  ClosePositionRequest,
+  ClosePositionResult,
+  HistoryPeriod,
+} from './portfolio.types';
 
 @Injectable()
-export class PortfolioService {
-  constructor(
-    private readonly positionsRepository: PortfolioPositionsRepository,
-    private readonly closedPositionsRepository: PortfolioClosedPositionsRepository,
-    private readonly summaryRepository: PortfolioSummaryRepository,
-    private readonly tradesRepository: PortfolioTradesRepository,
-  ) {}
+export class PortfolioService implements OnModuleDestroy {
+  private readonly logger = new Logger(PortfolioService.name);
+  private readonly pool: Pool;
+  private readonly venueOrderUrl?: string;
+  private readonly venueTimeoutMs: number;
 
-  async getPositions(query: GetPortfolioPositionsQueryDto): Promise<{
-    positions: PortfolioPosition[];
-  }> {
+  constructor(private readonly configService: ConfigService) {
+    const connectionString = this.buildConnectionString();
+    this.venueOrderUrl = this.configService.get<string>('VENUE_ORDER_URL');
+    this.venueTimeoutMs = Number(
+      this.configService.get<string>('VENUE_ORDER_TIMEOUT_MS') ?? '1500',
+    );
+
+    this.pool = new Pool({ connectionString });
+  }
+
+  private buildConnectionString(): string {
+    const dbHost = this.configService.get<string>('db_hostname');
+    const dbName = this.configService.get<string>('db_name');
+    const dbUser = this.configService.get<string>('db_username');
+    const dbPassword = this.configService.get<string>('db_password');
+    const dbPort = this.configService.get<string>('db_port');
+
+    if (dbHost && dbName && dbUser && dbPassword && dbPort) {
+      const encodedUser = encodeURIComponent(dbUser);
+      const encodedPassword = encodeURIComponent(dbPassword);
+      return `postgresql://${encodedUser}:${encodedPassword}@${dbHost}:${dbPort}/${dbName}`;
+    }
+
+    return this.configService.getOrThrow<string>('DATABASE_URL');
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.pool.end();
+  }
+
+  async getHistory(
+    userId: string,
+    period: HistoryPeriod,
+  ): Promise<BalanceSnapshot[]> {
+    const points = await this.fetchSnapshotsFromDb(userId, period);
+
+    if (points.length < 3) {
+      return [];
+    }
+
+    return points.map((point) => ({
+      date: point.date,
+      balance_value: Number(point.balance_value),
+    }));
+  }
+
+  private async fetchSnapshotsFromDb(
+    userId: string,
+    period: HistoryPeriod,
+  ): Promise<BalanceSnapshotRow[]> {
+    const query = `
+      WITH latest AS (
+        SELECT MAX(snapshot_date) AS max_date
+        FROM silver_dgterminal.polymarket_equity_snapshots_user
+        WHERE user_id = $1::BIGINT
+      ),
+      raw AS (
+        SELECT
+          snapshot_date::date AS snapshot_date,
+          balance_value
+        FROM silver_dgterminal.polymarket_equity_snapshots_user
+        WHERE user_id = $1::BIGINT
+          AND (
+            $2::text = 'all'
+            OR snapshot_date >= (
+              (SELECT max_date FROM latest) -
+              CASE
+                WHEN $2::text = '7d' THEN INTERVAL '6 days'
+                WHEN $2::text = '30d' THEN INTERVAL '29 days'
+                WHEN $2::text = '90d' THEN INTERVAL '89 days'
+                ELSE INTERVAL '0 days'
+              END
+            )
+          )
+      ),
+      date_bounds AS (
+        SELECT MIN(snapshot_date) AS min_date, MAX(snapshot_date) AS max_date
+        FROM raw
+      ),
+      series AS (
+        SELECT day::date AS date
+        FROM date_bounds,
+          LATERAL generate_series(min_date, max_date, INTERVAL '1 day') AS day
+      )
+      SELECT
+        s.date::text AS date,
+        (
+          SELECT r.balance_value
+          FROM raw r
+          WHERE r.snapshot_date <= s.date
+          ORDER BY r.snapshot_date DESC
+          LIMIT 1
+        ) AS balance_value
+      FROM series s
+      ORDER BY s.date ASC;
+    `;
+
     try {
-      const positions = await this.positionsRepository.findByWallet(query);
-      return { positions };
-    } catch {
-      return { positions: [] };
+      const { rows } = await this.pool.query<BalanceSnapshotRow>(query, [
+        userId,
+        period,
+      ]);
+      return rows.filter((row) => row.balance_value !== null);
+    } catch (error) {
+      this.logger.error(
+        `Failed fetching portfolio history for userId=${userId}, period=${period}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw error;
     }
   }
 
-  async getClosedPositions(
-    query: GetPortfolioClosedPositionsQueryDto,
+  async closePosition(
+    userId: string,
+    positionId: string,
+    request: ClosePositionRequest,
+  ): Promise<ClosePositionResult> {
+    const existingPosition = await this.fetchPosition(userId, positionId);
+    const currentShares = Number(existingPosition.shares ?? 0);
+    if (currentShares <= 0) {
+      throw new ConflictException({
+        code: 'POSITION_ALREADY_CLOSED',
+        message: 'Position is already closed',
+      });
+    }
+
+    const avgEntryPrice = Number(existingPosition.avg_entry_price ?? 0);
+    const currentPrice = Number(
+      existingPosition.current_price ?? existingPosition.avg_entry_price ?? 0,
+    );
+    const closeFraction =
+      request.type === 'full' ? 1 : Number(request.percentage ?? 0) / 100;
+    const closeShares = Number((currentShares * closeFraction).toFixed(6));
+    const remainingShares = Number((currentShares - closeShares).toFixed(6));
+    const realizedPnl = Number(
+      ((currentPrice - avgEntryPrice) * closeShares).toFixed(6),
+    );
+    const closedAt = new Date().toISOString();
+
+    await this.executeMarketSell(positionId, closeShares);
+    const remainingCostBasis = Number(
+      (remainingShares * avgEntryPrice).toFixed(6),
+    );
+    const updatedAvgEntryPrice =
+      remainingShares > 0
+        ? Number((remainingCostBasis / remainingShares).toFixed(6))
+        : 0;
+    const closedCostBasis = Number((closeShares * avgEntryPrice).toFixed(6));
+    const tradeOutcome = this.calculateOutcome(realizedPnl);
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      if (request.type === 'full') {
+        await client.query(
+          `
+            DELETE FROM silver_dgterminal.positions
+            WHERE user_id = $1::BIGINT
+              AND asset = $2
+          `,
+          [userId, positionId],
+        );
+      } else {
+        await client.query(
+          `
+            UPDATE silver_dgterminal.positions
+            SET
+              shares = $1::NUMERIC,
+              cost_basis = $2::NUMERIC,
+              avg_entry_price = $3::NUMERIC,
+              last_updated = NOW(),
+              updated_at = NOW()
+            WHERE user_id = $4::BIGINT
+              AND asset = $5
+          `,
+          [
+            `${remainingShares}`,
+            `${remainingCostBasis}`,
+            `${updatedAvgEntryPrice}`,
+            userId,
+            positionId,
+          ],
+        );
+      }
+
+      await this.recordRealizedPnl(
+        client,
+        userId,
+        existingPosition.proxy_wallet,
+        realizedPnl,
+      );
+      await this.insertManualCloseTrade(
+        client,
+        userId,
+        positionId,
+        existingPosition,
+        avgEntryPrice,
+        closeShares,
+        closedCostBasis,
+        currentPrice,
+        realizedPnl,
+        closedAt,
+        tradeOutcome,
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    if (request.type === 'full') {
+      return {
+        realized_pnl: realizedPnl,
+        closed_at: closedAt,
+      };
+    }
+
+    return {
+      realized_pnl: realizedPnl,
+      remaining_size: remainingShares,
+      avg_entry_price: updatedAvgEntryPrice,
+    };
+  }
+
+  private async fetchPosition(
+    userId: string,
+    positionId: string,
   ): Promise<{
-    closed_positions: PortfolioClosedPosition[];
+    proxy_wallet: string;
+    market_name: string | null;
+    side: string | null;
+    venue: string | null;
+    category: string | null;
+    shares: string | number | null;
+    avg_entry_price: string | number | null;
+    current_price: string | number | null;
   }> {
-    try {
-      return {
-        closed_positions:
-          await this.closedPositionsRepository.findByWallet(query),
-      };
-    } catch {
-      return { closed_positions: [] };
+    const { rows } = await this.pool.query<{
+      proxy_wallet: string;
+      market_name: string | null;
+      side: string | null;
+      venue: string | null;
+      category: string | null;
+      shares: string | number | null;
+      avg_entry_price: string | number | null;
+      current_price: string | number | null;
+    }>(
+      `
+        SELECT
+          proxy_wallet,
+          market_name,
+          side,
+          venue,
+          category,
+          shares,
+          avg_entry_price,
+          current_price
+        FROM silver_dgterminal.positions
+        WHERE user_id = $1::BIGINT
+          AND asset = $2
+        LIMIT 1
+      `,
+      [userId, positionId],
+    );
+    if (rows.length === 0) {
+      throw new NotFoundException({
+        code: 'POSITION_NOT_FOUND',
+        message: 'Position not found',
+      });
     }
+    return rows[0];
   }
 
-  async getSummary(query: GetPortfolioSummaryQueryDto): Promise<{
-    summary: PortfolioSummaryResponseDto;
-  }> {
-    try {
-      const summary = await this.summaryRepository.findByWallet(
-        query.walletAddress,
-      );
-      return {
-        summary: summary ?? {
-          balance: 0,
-          open_exposure: 0,
-          unrealized_pnl: 0,
-          realized_30d: 0,
-          rewards_earned: 0,
-          rewards_pct_of_pnl: null,
-          deployment_rate_pct: null,
-          balance_last_updated: null,
-          open_exposure_last_updated: null,
-          unrealized_pnl_last_updated: null,
-          realized_30d_last_updated: null,
-          rewards_last_updated: null,
-        },
-      };
-    } catch {
-      return {
-        summary: {
-          balance: 0,
-          open_exposure: 0,
-          unrealized_pnl: 0,
-          realized_30d: 0,
-          rewards_earned: 0,
-          rewards_pct_of_pnl: null,
-          deployment_rate_pct: null,
-          balance_last_updated: null,
-          open_exposure_last_updated: null,
-          unrealized_pnl_last_updated: null,
-          realized_30d_last_updated: null,
-          rewards_last_updated: null,
-        },
-      };
-    }
+  private async recordRealizedPnl(
+    client: PoolClient,
+    userId: string,
+    proxyWallet: string,
+    realizedPnl: number,
+  ): Promise<void> {
+    await client.query(
+      `
+        INSERT INTO silver_dgterminal.portfolio_summary (
+          user_id,
+          proxy_wallet,
+          realized_30d,
+          realized_30d_last_updated
+        )
+        VALUES ($1::BIGINT, $2, $3::NUMERIC, NOW())
+        ON CONFLICT (user_id)
+        DO UPDATE SET
+          realized_30d = COALESCE(silver_dgterminal.portfolio_summary.realized_30d, 0) + $3::NUMERIC,
+          realized_30d_last_updated = NOW(),
+          updated_at = NOW()
+      `,
+      [userId, proxyWallet, `${realizedPnl}`],
+    );
   }
 
-  async getTrades(query: GetPortfolioTradesQueryDto): Promise<{
-    trades: PortfolioTrades;
-    page: number;
-    per_page: number;
-    total_count: number;
-    total_pages: number;
-  }> {
-    try {
-      const closedPositions = await this.closedPositionsRepository.findByWallet(
-        {
-          walletAddress: query.walletAddress,
-          limit: 500,
-          offset: 0,
-          sort_by: 'closed_at',
-          sort_dir: 'desc',
-        },
-      );
-      const trades = this.buildTradesFromClosedPositions(closedPositions);
-      const period = query.period ?? '30d';
-      const periodFilteredTrades = this.filterByPeriod(trades, period);
-      const outcomeFilteredTrades = this.filterByOutcome(
-        periodFilteredTrades,
-        query.outcome,
-      );
-      const sortedTrades = this.sortTrades(
-        outcomeFilteredTrades,
-        query.sort_by,
-        query.sort_dir,
-      );
-      const page = query.page ?? 1;
-      const perPage = query.per_page ?? 25;
-      const paginatedTrades = this.paginateTrades(sortedTrades, page, perPage);
-      const totalCount = sortedTrades.length;
-      const totalPages = totalCount === 0 ? 0 : Math.ceil(totalCount / perPage);
-
-      return {
-        trades: paginatedTrades,
-        page,
-        per_page: perPage,
-        total_count: totalCount,
-        total_pages: totalPages,
-      };
-    } catch {
-      return {
-        trades: [],
-        page: query.page ?? 1,
-        per_page: query.per_page ?? 25,
-        total_count: 0,
-        total_pages: 0,
-      };
-    }
-  }
-
-  private buildTradesFromClosedPositions(
-    closedPositions: PortfolioClosedPosition[],
-  ): PortfolioTrades {
-    return closedPositions.map((closed) => {
-      const pnl = closed.realized_pnl;
-      const outcome = this.pnlToOutcome(pnl);
-      return {
-        ...closed,
-        date: closed.closed_at || closed.end_date,
-        market: closed.market_name,
-        side: closed.side,
-        entry_price: closed.avg_entry_price,
-        exit_price: closed.current_price,
-        size: closed.cost_basis,
+  private async insertManualCloseTrade(
+    client: PoolClient,
+    userId: string,
+    positionId: string,
+    position: {
+      proxy_wallet: string;
+      market_name: string | null;
+      side: string | null;
+      venue: string | null;
+      category: string | null;
+    },
+    avgEntryPrice: number,
+    closeShares: number,
+    closedCostBasis: number,
+    currentPrice: number,
+    realizedPnl: number,
+    closedAt: string,
+    outcome: 'WON' | 'LOST' | 'PUSHED',
+  ): Promise<void> {
+    await client.query(
+      `
+        INSERT INTO silver_dgterminal.trade_history (
+          user_id,
+          proxy_wallet,
+          trade_id,
+          trade_time,
+          market_name,
+          side,
+          venue,
+          category,
+          entry_price,
+          exit_price,
+          cost_basis,
+          shares,
+          outcome,
+          realized_pnl,
+          rewards_earned,
+          is_settlement,
+          is_manual_close
+        )
+        VALUES (
+          $1::BIGINT,
+          $2,
+          $3,
+          $4::TIMESTAMPTZ,
+          $5,
+          $6,
+          COALESCE($7, 'Polymarket'),
+          $8,
+          $9::NUMERIC,
+          $10::NUMERIC,
+          $11::NUMERIC,
+          $12::NUMERIC,
+          $13,
+          $14::NUMERIC,
+          0,
+          FALSE,
+          TRUE
+        )
+      `,
+      [
+        userId,
+        position.proxy_wallet,
+        `manual-close-${positionId}-${Date.now()}`,
+        closedAt,
+        position.market_name ?? `Position ${positionId}`,
+        position.side,
+        position.venue,
+        position.category,
+        `${avgEntryPrice}`,
+        `${currentPrice}`,
+        `${closedCostBasis}`,
+        `${closeShares}`,
         outcome,
-        pnl,
-        venue: closed.venue || 'Polymarket',
-      };
-    });
+        `${realizedPnl}`,
+      ],
+    );
   }
 
-  private filterByPeriod(
-    trades: PortfolioTrades,
-    period: '1d' | '7d' | '30d' | 'all',
-  ): PortfolioTrades {
-    if (period === 'all') return trades;
-    const now = Date.now();
-    const days = period === '1d' ? 1 : period === '7d' ? 7 : 30;
-    const cutoff = now - days * 24 * 60 * 60 * 1000;
-    return trades.filter((trade) => {
-      const date = this.parseDate(trade.date);
-      return date !== null && date.getTime() >= cutoff;
-    });
-  }
-
-  private filterByOutcome(
-    trades: PortfolioTrades,
-    outcome?: string,
-  ): PortfolioTrades {
-    if (!outcome) return trades;
-    const normalized = outcome.toUpperCase();
-    if (
-      normalized !== 'WON' &&
-      normalized !== 'LOST' &&
-      normalized !== 'PUSHED'
-    ) {
-      return trades;
+  private calculateOutcome(realizedPnl: number): 'WON' | 'LOST' | 'PUSHED' {
+    if (realizedPnl > 0) {
+      return 'WON';
     }
-    return trades.filter((trade) => trade.outcome === normalized);
-  }
-
-  private sortTrades(
-    trades: PortfolioTrades,
-    sortBy?: string,
-    sortDir?: 'asc' | 'desc',
-  ): PortfolioTrades {
-    const direction = (sortDir ?? 'desc').toLowerCase() === 'asc' ? 1 : -1;
-    const key = (sortBy ?? 'date').toLowerCase();
-    const sorted = [...trades];
-    sorted.sort((a, b) => {
-      const left = this.sortValue(a, key);
-      const right = this.sortValue(b, key);
-      if (left < right) return -1 * direction;
-      if (left > right) return 1 * direction;
-      return 0;
-    });
-    return sorted;
-  }
-
-  private sortValue(trade: PortfolioTrade, key: string): string | number {
-    switch (key) {
-      case 'market':
-        return trade.market ?? '';
-      case 'side':
-        return trade.side ?? '';
-      case 'entry_price':
-        return trade.entry_price ?? Number.NEGATIVE_INFINITY;
-      case 'exit_price':
-        return trade.exit_price ?? Number.NEGATIVE_INFINITY;
-      case 'size':
-        return trade.size ?? Number.NEGATIVE_INFINITY;
-      case 'pnl':
-        return trade.pnl ?? Number.NEGATIVE_INFINITY;
-      case 'outcome':
-        return trade.outcome ?? '';
-      case 'venue':
-        return trade.venue ?? '';
-      case 'date':
-      default:
-        return this.parseDate(trade.date)?.getTime() ?? 0;
+    if (realizedPnl < 0) {
+      return 'LOST';
     }
-  }
-
-  private paginateTrades(
-    trades: PortfolioTrades,
-    page: number,
-    perPage: number,
-  ): PortfolioTrades {
-    const safePage = Number.isFinite(page) && page > 0 ? page : 1;
-    const safePerPage =
-      Number.isFinite(perPage) && perPage > 0 ? Math.floor(perPage) : 25;
-    const start = (safePage - 1) * safePerPage;
-    return trades.slice(start, start + safePerPage);
-  }
-
-  private parseDate(value: string): Date | null {
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  private pnlToOutcome(pnl: number | null): 'WON' | 'LOST' | 'PUSHED' | null {
-    if (pnl === null) return null;
-    if (pnl > 0) return 'WON';
-    if (pnl < 0) return 'LOST';
     return 'PUSHED';
+  }
+
+  private async executeMarketSell(
+    positionId: string,
+    size: number,
+  ): Promise<void> {
+    if (!this.venueOrderUrl) {
+      this.logger.warn(
+        `VENUE_ORDER_URL not set; skipping venue call for asset=${positionId}`,
+      );
+      return;
+    }
+
+    try {
+      const response = await fetch(this.venueOrderUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          asset: positionId,
+          side: 'sell',
+          orderType: 'market',
+          size,
+        }),
+        signal: AbortSignal.timeout(this.venueTimeoutMs),
+      });
+      if (!response.ok) {
+        throw new Error(`Venue order request failed: ${response.status}`);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Venue sell failed for asset=${positionId}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw new InternalServerErrorException({
+        code: 'VENUE_ORDER_FAILED',
+        message: 'Failed to execute market sell on venue',
+      });
+    }
   }
 }
