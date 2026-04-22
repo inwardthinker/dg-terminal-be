@@ -179,6 +179,85 @@
           "response": []
         },
         {
+          "name": "GET trades (default per_page)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{authorization}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/portfolio/trades?wallet={{wallet}}",
+            "description": "Polymarket activity wrapper (`/activity`). Optional params: period (1d|7d|30d|all), page, per_page (default 25), sort_by, sort_dir, outcome."
+          },
+          "response": []
+        },
+        {
+          "name": "GET trades (timestamp filters - Polymarket style)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{authorization}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/portfolio/trades?wallet={{wallet}}&limit=30&offset=0&excludeDepositsWithdrawals=false&start=1776191400&end=1776882600&sortBy=TIMESTAMP&sortDirection=DESC",
+            "description": "Matches Polymarket /activity timestamp filtering parameters."
+          },
+          "response": []
+        },
+        {
+          "name": "GET trades — 400 (invalid period)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{authorization}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/portfolio/trades?wallet={{wallet}}&period=invalid",
+            "description": "Expect 400 when period is not one of: 1d, 7d, 30d, all."
+          },
+          "response": []
+        },
+        {
+          "name": "GET trades — 401 (no Authorization)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/portfolio/trades?wallet={{wallet}}",
+            "description": "Expect 401 when Authorization is missing or empty."
+          },
+          "response": []
+        },
+        {
           "name": "GET summary",
           "request": {
             "method": "GET",

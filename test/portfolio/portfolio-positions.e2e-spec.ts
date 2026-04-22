@@ -20,6 +20,14 @@ type SummaryResponse = {
   summary: Record<string, unknown>;
 };
 
+type TradesResponse = {
+  trades: unknown;
+  page: number;
+  per_page: number;
+  total_count: number;
+  total_pages: number;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -45,6 +53,26 @@ function toSummaryResponse(value: unknown): SummaryResponse {
     throw new Error('Invalid summary response shape');
   }
   return { summary: value.summary };
+}
+
+function toTradesResponse(value: unknown): TradesResponse {
+  if (
+    !isRecord(value) ||
+    !('trades' in value) ||
+    typeof value.page !== 'number' ||
+    typeof value.per_page !== 'number' ||
+    typeof value.total_count !== 'number' ||
+    typeof value.total_pages !== 'number'
+  ) {
+    throw new Error('Invalid trades response shape');
+  }
+  return {
+    trades: value.trades,
+    page: value.page,
+    per_page: value.per_page,
+    total_count: value.total_count,
+    total_pages: value.total_pages,
+  };
 }
 
 function expectTypeOfField(
@@ -89,6 +117,7 @@ describe('Portfolio Positions (e2e)', () => {
     await request(app.getHttpServer())
       .get('/api/portfolio/summary')
       .expect(401);
+    await request(app.getHttpServer()).get('/api/portfolio/trades').expect(401);
   });
 
   it('rejects invalid sort_dir', async () => {
@@ -101,6 +130,10 @@ describe('Portfolio Positions (e2e)', () => {
   it('rejects invalid wallet query format', async () => {
     await request(app.getHttpServer())
       .get('/api/portfolio/positions?wallet=not-an-evm-address')
+      .set(authHeader)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/portfolio/trades?wallet=not-an-evm-address')
       .set(authHeader)
       .expect(400);
   });
@@ -116,6 +149,17 @@ describe('Portfolio Positions (e2e)', () => {
       .expect(400);
     await request(app.getHttpServer())
       .get('/api/portfolio/summary')
+      .set(authHeader)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/portfolio/trades')
+      .set(authHeader)
+      .expect(400);
+  });
+
+  it('rejects invalid period for trades endpoint', async () => {
+    await request(app.getHttpServer())
+      .get(`/api/portfolio/trades?wallet=${wallet}&period=invalid`)
       .set(authHeader)
       .expect(400);
   });
@@ -256,6 +300,21 @@ describe('Portfolio Positions (e2e)', () => {
       body.summary.rewards_last_updated === null ||
         typeof body.summary.rewards_last_updated === 'string',
     ).toBe(true);
+  });
+
+  it('returns 200 and trades wrapper shape when authenticated', async () => {
+    const response = await request(app.getHttpServer())
+      .get(
+        `/api/portfolio/trades?wallet=${wallet}&period=7d&page=1&sort_by=created_at&sort_dir=desc`,
+      )
+      .set(authHeader)
+      .expect(200);
+    const body = toTradesResponse(response.body as unknown);
+    expect(body).toHaveProperty('trades');
+    expect(typeof body.page).toBe('number');
+    expect(typeof body.per_page).toBe('number');
+    expect(typeof body.total_count).toBe('number');
+    expect(typeof body.total_pages).toBe('number');
   });
 
   afterEach(async () => {

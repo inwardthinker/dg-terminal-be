@@ -47,142 +47,169 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 ## Commands
 
 ```bash
-# Development
-npm run start:dev        # watch mode (recommended)
-npm run start:prod       # run compiled output
-
-# Build
+# API (NestJS) — run from repo root
+npm run start:dev        # watch mode
+npm run start:prod       # run compiled output (node dist/main)
 npm run build            # compile to dist/
-
-# Test
-npm test                 # unit tests (rootDir: src/, *.spec.ts)
-npm run test:watch       # watch mode
-npm run test:cov         # with coverage
-npm run test:e2e         # e2e tests (test/jest-e2e.json)
-
-# Run a single test file
-npx jest src/portfolio/portfolio.service.spec.ts
-
-# Lint / Format
+npm test                 # jest unit tests (rootDir: src/, *.spec.ts)
+npm run test:watch
+npm run test:cov
+npm run test:e2e         # jest --config ./test/jest-e2e.json
+npx jest src/portfolio/portfolio.service.spec.ts   # single file
 npm run lint             # eslint --fix
 npm run format           # prettier --write
+npm run git:sanitize     # scripts/git-sanitize-check.sh
 
-# Git safety check
-npm run git:sanitize
+# Worker (standalone package) — run from ./worker
+cd worker
+npm run start:dev        # tsx src/dgterminal_worker/main.ts
+npm run build            # tsc -> dist/
+npm run start            # node dist/dgterminal_worker/main.js
+npm test                 # tsx --test src/**/*.test.ts (node:test runner)
 ```
 
 ## Architecture
 
-**dg-terminal-be** is a NestJS backend that proxies Polymarket prediction market data into a normalized portfolio positions API. It has no database — all data is fetched live from the Polymarket CLOB REST API and Gamma API on each request.
+**dg-terminal-be** has two runtime processes sharing one Postgres database:
 
-### Module layout
+1. **API** (`src/`) — a NestJS HTTP + Socket.IO server that serves `/api/portfolio/*` endpoints and a `/positions-prices` WebSocket namespace. Portfolio positions, closed positions, and summary are read from Postgres. Trades are a thin passthrough to the Polymarket Data API.
+2. **Worker** (`worker/`) — an independent Node process (own `package.json`, `tsconfig.json`, `node_modules`) that polls the Polymarket Data API on recurring intervals and writes normalized rows into shared tables. Not a Nest app — plain `tsx`/`ts` entry at `worker/src/dgterminal_worker/main.ts`.
+
+The API never calls Polymarket for positions/closed-positions/summary data — those endpoints query Postgres tables the worker populates. The trades endpoint is the only portfolio path that still proxies live to Polymarket.
+
+### API module layout
 
 ```
 AppModule
-├── ConfigModule (global)           # @nestjs/config, reads .env
-├── PolymarketClientModule (global) # Polymarket SDK + HTTP client
-└── PortfolioModule                 # Portfolio positions endpoint
+├── ConfigModule (global)        # @nestjs/config
+├── DatabaseModule (global)      # provides PG_POOL (pg.Pool)
+├── PortfolioModule              # HTTP endpoints (DB-backed + trades passthrough)
+└── PositionsModule              # Socket.IO gateway streaming live prices
 ```
 
-**PolymarketClientModule** (`src/polymarket/`) is `@Global()`. It registers `ClobClient` (from `@polymarket/clob-client`) as an injection token `CLOB_CLIENT` via a factory provider. During Jest runs (`JEST_WORKER_ID` is set), the factory returns a plain stub `{ host }` instead of instantiating the real SDK — this avoids ESM import issues with the Polymarket package.
+- `DatabaseModule` (`src/database/`) is `@Global()`. It exposes the `PG_POOL` symbol — an already-initialized `pg.Pool` configured from `db_hostname` / `db_port` / `db_name` / `db_username` / `db_password`. `ssl.rejectUnauthorized` is `false`; pool size 10.
+- No ORM. Repositories take `Pool` via `@Inject(PG_POOL)` and write raw SQL.
 
-**PortfolioModule** (`src/portfolio/`) exposes two REST endpoints:
+### Portfolio endpoints
 
-```
-GET /api/portfolio/positions
-  Headers: Authorization: <any non-empty string>
-  Query:   wallet    — required EVM address (0x + 40 hex chars); missing/invalid → 400
-           sort_by?  — any key of PortfolioPositionResponseDto
-           sort_dir? — 'asc' | 'desc'
+All under `/api/portfolio`, all guarded by `PortfolioAuthHeaderGuard` (see Auth).
 
-GET /api/portfolio/closed-positions
-  Headers: Authorization: <any non-empty string>
-  Query:   wallet    — required EVM address; missing/invalid → 400
-           sort_by?  — any key of PortfolioClosedPositionResponseDto
-           sort_dir? — 'asc' | 'desc'
-           limit?    — integer 1–500, default 30
-           offset?   — integer ≥ 0, default 0
-```
+| Route                   | Source                    | Query params                                                                                                               | Returns                     |
+| ----------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| `GET /positions`        | `positions` table         | `wallet` (required EVM), `sort_by?`, `sort_dir?`                                                                           | `{ positions: […] }`        |
+| `GET /closed-positions` | `trade_history` table     | `wallet`, `sort_by?`, `sort_dir?`, `limit?` (1–500, default 30), `offset?`                                                 | `{ closed_positions: […] }` |
+| `GET /summary`          | `portfolio_summary` table | `safe_wallet_address` (required EVM)                                                                                       | `{ summary: {…} }`          |
+| `GET /trades`           | Polymarket `/trades`      | `wallet`, `period?` ∈ `1d`/`7d`/`30d`/`all`, `page?`, `per_page?` (1–500, default 25), `sort_by?`, `sort_dir?`, `outcome?` | `{ trades: <passthrough> }` |
 
-### Data sources
+Wallet is a required `0x` + 40 hex regex. Invalid/missing wallet → `400` via `ValidationPipe`. Missing/empty `Authorization` header → `401` via guard.
 
-| Surface                 | Env var                        | Default                            | Notes                                                                                     |
-| ----------------------- | ------------------------------ | ---------------------------------- | ----------------------------------------------------------------------------------------- |
-| Open + closed positions | `POLYMARKET_DATA_API_BASE_URL` | `https://data-api.polymarket.com`  | Primary source; matches web app behavior                                                  |
-| Category enrichment     | `POLYMARKET_GAMMA_BASE_URL`    | `https://gamma-api.polymarket.com` | Market metadata fallback                                                                  |
-| CLOB SDK                | `POLYMARKET_BASE_URL`          | `https://clob.polymarket.com`      | `ClobClient` registered for **future** trading flows; not used for portfolio list queries |
+All four service methods wrap the repository call in try/catch and return an empty/zeroed fallback shape on error (see `src/portfolio/portfolio.service.ts`). Errors are swallowed — they do not surface as 5xx.
 
-### Open positions pipeline
+#### Read paths into Postgres
 
-Raw Polymarket Data API response → `PolymarketClientService.getOpenPositions()`:
+- **`PortfolioPositionsRepository`** reads `positions`. Default ordering groups by category (summed `cost_basis` desc) then by row `cost_basis` desc. Explicit `sort_by` maps DTO field → DB column via `POSITION_SORT_COLUMN_MAP` (e.g. `outcome_token_id` → `asset`, `exposure` → `current_value`). Unknown `sort_by` returns `[]`.
+- **`PortfolioClosedPositionsRepository`** reads `trade_history`. Default orders by category (summed `realized_pnl` desc) then `realized_pnl` desc. `sort_by`=`end_date` and `closed_at` both map to `trade_time`. `realized_pnl_pct` is sorted via a CASE expression. `limit`/`offset` default to 30/0.
+- **`PortfolioSummaryRepository`** aggregates `portfolio_summary` rows for a wallet with `COALESCE(SUM(...), 0)` over five numeric fields; derives `rewards_pct_of_pnl` and `deployment_rate_pct`; returns `null` when no rows (service converts to zeroed DTO).
+- **`PortfolioTradesRepository`** is the only repo that is NOT DB-backed — it `fetch`es `GET {POLYMARKET_DATA_API_URL}/trades?...`, forwards `user`, `per_page` (default `25`), and any of `page`/`period`/`sort_by`/`sort_dir`/`outcome` when set. Throws on non-2xx; service catches and returns `{ trades: [] }`.
 
-1. **Fetch** `GET /positions?user=<wallet>&sortBy=CURRENT&sortDirection=DESC&sizeThreshold=0.1&limit=100&offset=0` from `POLYMARKET_DATA_API_BASE_URL`
-2. **Normalize** via `toRawPosition()` — aliases many Data API camelCase fields (`title`/`market`, `conditionId`, `curPrice`, `initialValue`, `currentValue`, `cashPnl`, etc.) into `PolymarketRawPosition`
-3. **Enrich categories** via `enrichCategoriesForAssets()` — single batch `GET /markets?condition_ids=id1,id2,...` (up to 25 per chunk, 8s timeout); falls back to slug/event_slug Gamma lookup (5s timeout) for anything unresolved after batch; in-memory cache per condition id across all requests
-4. **Filter** — drops rows with `size <= 0` or `cur_price <= 0`
-5. **Map** via `mapPolymarketPosition()` — when `initial_value` + `current_value` present, uses Data API metrics directly for `cost_basis`/`exposure`/`unrealized_pnl`; else derives from `shares × prices`; guards division by zero
-6. **Filter again** — drops positions where `shares <= 0`
-7. **Sort** via `sortPortfolioPositions()`:
-   - `sort_by` set: sort by that field; `sort_dir` defaults to `desc`
-   - Default: group by category (total exposure desc), then by row `exposure` desc within category
+### Positions WebSocket (live price stream)
 
-### Closed positions pipeline
+- Namespace: `/positions-prices` (Socket.IO, `@WebSocketGateway` in `src/positions/positions.gateway.ts`).
+- Auth: client must supply `userAddress` (or `walletAddress`) either in Socket.IO `auth` payload or query — must match `/^0x[a-fA-F0-9]{40}$/`. Invalid → server emits `error` then disconnects.
+- On connect, `PositionsPriceService.subscribeUser`:
+  1. Fetches open positions from Polymarket Data API (`GET /positions?user=…&sizeThreshold=0&limit=500`) via `PolymarketDataService`.
+  2. Emits an initial snapshot per position (using cached venue price or Polymarket `curPrice` fallback, `stale: true` if unknown).
+  3. Starts a `setInterval` snapshot emitter every `POSITIONS_EMIT_INTERVAL_MS` (default 5000 ms).
+  4. Subscribes to `PolymarketMarketStreamService` — a singleton WebSocket client to `POLYMARKET_MARKET_WS_URL` — which pushes `{ assetId, currentPrice, stale }` updates as Polymarket publishes them. Reconnect uses exponential backoff capped at 16 s.
+- Emitted event name: `position_price`, shape `PositionPriceEvent` (`src/positions/positions.types.ts`). Frontend consumer docs: `WEBSOCKET_FRONTEND_INTEGRATION.md`.
 
-`PolymarketClientService.getClosedPositions()`:
+### Worker package (`worker/`)
 
-1. **Fetch** `GET /closed-positions?user=<wallet>&sortBy=realizedpnl&sortDirection=DESC&limit=<n>&offset=<n>` from `POLYMARKET_DATA_API_BASE_URL`
-2. **Normalize** via `toRawClosedPosition()` — maps `totalBought` → `size`, `realizedPnl`, `timestamp` (unix seconds), `endDate`, etc.
-3. **Enrich categories** — same `enrichCategoriesForAssets()` as open positions
-4. **Filter** — drops rows with `size <= 0`
-5. **Map** via `mapPolymarketClosedPosition()` — `cost_basis = totalBought × avgPrice`; `realized_pnl_pct = realized_pnl / cost_basis`; `closed_at` = unix timestamp → ISO 8601
-6. **Filter** — drops positions where `shares <= 0`
-7. **Sort** via `sortClosedPortfolioPositions()`:
-   - `sort_by` set: sort by field; `sort_dir` defaults to `desc`
-   - Default: group by category (total realized PnL desc), then by row `realized_pnl` desc within category
+Standalone process that writes into the same Postgres. Entry: `worker/src/dgterminal_worker/main.ts`. Own `pg.Pool` (not the Nest `PG_POOL`).
 
-### Response DTO shapes
+Four scheduled loops plus a persistent market WebSocket:
 
-**`PortfolioPositionResponseDto`** (open positions):
+| Loop | Default interval (env override) | Responsibility                                                | Writes                                                                            |
+| ---- | ------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| A    | `WORKER_LOOP_A_MS` = 10 000 ms  | Per-wallet balance snapshot from Polymarket                   | `portfolio_summary.balance` (+ `balance_last_updated`)                            |
+| B    | `WORKER_LOOP_B_MS` = 30 000 ms  | Full-replace open positions; recompute open exposure          | `positions` (upsert + prune), `portfolio_summary.open_exposure`, `unrealized_pnl` |
+| C    | `WORKER_LOOP_C_MS` = 60 000 ms  | Rewards earned per wallet (via `rewards.ts`)                  | `portfolio_summary.rewards_earned`                                                |
+| D    | `WORKER_LOOP_D_MS` = 300 000 ms | Closed trades (`trade_history`) + rolling 30-day realized PnL | `trade_history` (upsert), `portfolio_summary.realized_30d`                        |
+| WS   | persistent                      | Polymarket market WebSocket fan-in                            | (in-memory price cache consumed by other loops)                                   |
 
-- Core: `market_name`, `category`, `venue`, `side`, `avg_entry_price`, `current_price`, `shares`, `cost_basis`, `unrealized_pnl`, `unrealized_pnl_pct` (ratio, e.g. `1.56` = +156%), `exposure`
-- Passthroughs: `condition_id`, `outcome_token_id`, `proxy_wallet`, `slug`, `icon`, `event_id`, `event_slug`, `outcome_index`, `opposite_outcome`, `opposite_asset`, `end_date`, `redeemable`, `mergeable`, `negative_risk`, `total_bought`, `realized_pnl`, `percent_realized_pnl`, `initial_value`, `current_value`, `percent_pnl`
-- Note: `percent_pnl` is display-oriented (e.g. `156.41`) from the Data API — **not** the same scale as `unrealized_pnl_pct`
+- Loop scheduler uses `setTimeout` chained on completion — NOT `setInterval` — so a slow cycle does not overlap itself. Main logs a warning if a cycle exceeds its target interval.
+- `WorkerDb.upsertPositions` / `upsertTradeHistory` use deadlock-safe retries and sort rows by `(wallet, asset)` before transactional inserts to keep lock ordering stable.
+- The worker discovers wallets from the `users` table (`id`, `safe_wallet_address`) — wallets are registered upstream; the worker does not create them.
+- `polymarket.ts` wraps Data API HTTP access; `mappers.ts` normalizes camelCase payloads into the snake_case column set.
+- Worker has its own test runner: `npm test` in `worker/` uses `tsx --test` (node:test), not Jest. Tests live alongside source as `*.test.ts`.
 
-**`PortfolioClosedPositionResponseDto`** (closed positions):
+### Database schema (tables in use)
 
-- Core: `market_name`, `category`, `venue`, `side`, `avg_entry_price`, `current_price`, `shares`, `cost_basis`, `realized_pnl`, `realized_pnl_pct`, `end_date`, `closed_at`
-- Passthroughs: `condition_id`, `outcome_token_id`, `proxy_wallet`, `slug`, `icon`, `event_id`, `event_slug`, `outcome_index`, `opposite_outcome`, `opposite_asset`
+Not managed by an ORM. The app treats these tables as given; the worker writes them.
 
-`PortfolioPosition` and `PortfolioClosedPosition` are aliases for their respective response DTOs.
+| Table               | Key columns                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Used by                                                            |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `users`             | `id`, `safe_wallet_address`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Worker (wallet discovery)                                          |
+| `positions`         | PK `(safe_wallet_address, asset)`; plus `condition_id`, `market_name`, `category`, `shares`, `avg_entry_price`, `cost_basis`, `current_price`, `unrealized_pnl`, `unrealized_pnl_pct`, `current_value`, `initial_value`, `end_date`, `redeemable`, `mergeable`, `negative_risk`, `percent_pnl`, `event_id`, `event_slug`, `outcome_index`, `opposite_outcome`, `opposite_asset`, `total_bought`, `realized_pnl`, `percent_realized_pnl`, `fair_value`, `fair_value_updated_at`, `last_rest_sync`, `last_updated`, `updated_at`, `slug`, `icon`, `user_id`, `venue`, `side` | Worker loop B (write); `PortfolioPositionsRepository` (read)       |
+| `trade_history`     | `safe_wallet_address`, `asset`, `condition_id`, `market_name`, `category`, `venue`, `side`, `shares`, `entry_price`, `exit_price`, `cost_basis`, `realized_pnl`, `trade_time`, `event_id`, `event_slug`, `outcome_index`, `opposite_outcome`, `opposite_asset`, `slug`, `icon`                                                                                                                                                                                                                                                                                             | Worker loop D (write); `PortfolioClosedPositionsRepository` (read) |
+| `portfolio_summary` | `safe_wallet_address`, `balance`, `open_exposure`, `unrealized_pnl`, `realized_30d`, `rewards_earned`, plus `*_last_updated` timestamps                                                                                                                                                                                                                                                                                                                                                                                                                                    | Worker loops A/B/C/D (write); `PortfolioSummaryRepository` (read)  |
+
+There is no in-repo migrations directory. `package.json` declares `db:migrate` → `node scripts/run-sql-migration.js migrations`, but that script is not currently tracked; schema provisioning is handled outside the repo.
 
 ### Auth
 
-`PortfolioAuthHeaderGuard` only checks that the `Authorization` header is a non-empty string. It does **not** validate the token value — authentication is expected to be enforced upstream (e.g. API gateway).
+`PortfolioAuthHeaderGuard` (`src/portfolio/guards/`) only checks that `Authorization` is a non-empty string. It does **not** validate the token value — authentication is expected to be enforced upstream (e.g. API gateway). WebSocket auth is handled separately by `PositionsGateway.extractUserAddress` (EVM-address check on `auth`/`query` handshake payload).
 
 ### Express 5 / `express-mongo-sanitize` compatibility
 
-Default `mongoSanitize()` assigns `req.query`, which throws on Express 5 (`req.query` is read-only). `main.ts` uses a `mongoSanitizeCompatibleWithExpress5()` wrapper that sanitizes `body`, `params`, and `headers` only — query validation is handled by `ValidationPipe` on DTOs.
+Default `mongoSanitize()` assigns `req.query`, which throws on Express 5 (`req.query` is read-only). `main.ts` uses a `mongoSanitizeCompatibleWithExpress5()` wrapper that sanitizes `body`, `params`, and `headers` only — query strings are validated by `ValidationPipe` on DTOs.
 
 ## Environment Variables
 
-Copy `.env.example` to `.env`:
+Copy `.env.example` to `.env`. The API, worker, and Socket.IO gateway share the same `.env` file.
 
-| Variable                       | Default                            | Notes                                            |
-| ------------------------------ | ---------------------------------- | ------------------------------------------------ |
-| `PORT`                         | `3000`                             |                                                  |
-| `POLYMARKET_DATA_API_BASE_URL` | `https://data-api.polymarket.com`  | Primary source for portfolio list queries        |
-| `POLYMARKET_BASE_URL`          | `https://clob.polymarket.com`      | CLOB SDK host; reserved for future trading flows |
-| `POLYMARKET_GAMMA_BASE_URL`    | `https://gamma-api.polymarket.com` | Category enrichment                              |
-| `POLYMARKET_API_KEY`           | —                                  | Optional; for authenticated CLOB SDK calls       |
-| `POLYMARKET_SECRET`            | —                                  | Optional                                         |
-| `POLYMARKET_PASSPHRASE`        | —                                  | Optional                                         |
+### Shared — Postgres (lowercase keys)
 
-`ClobClient` is instantiated without credentials if any of the three auth vars are missing. There is no `POLYMARKET_MAKER_ADDRESS` — wallet is always a required query param.
+| Variable      | Notes          |
+| ------------- | -------------- |
+| `db_hostname` | Postgres host  |
+| `db_port`     | default `5432` |
+| `db_name`     |                |
+| `db_username` |                |
+| `db_password` |                |
+
+### API
+
+| Variable                                         | Default                                                | Notes                                                       |
+| ------------------------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------- |
+| `PORT`                                           | `3000`                                                 |                                                             |
+| `POLYMARKET_DATA_API_URL`                        | `https://data-api.polymarket.com`                      | Used by positions WS fetch and portfolio trades passthrough |
+| `POLYMARKET_DATA_API_AUTH_HEADER_NAME`           | (unset)                                                | Optional outbound auth header name                          |
+| `POLYMARKET_DATA_API_AUTH_HEADER_VALUE`          | (unset)                                                | Optional outbound auth header value                         |
+| `POLYMARKET_MARKET_WS_URL`                       | `wss://ws-subscriptions-clob.polymarket.com/ws/market` | Live price stream                                           |
+| `POLYMARKET_MARKET_WS_AUTH_HEADER_NAME`/`_VALUE` | (unset)                                                | Optional WS auth headers                                    |
+| `POSITIONS_EMIT_INTERVAL_MS`                     | `5000`                                                 | Periodic snapshot cadence for `position_price`              |
+
+### Worker
+
+| Variable                       | Default                                                | Notes                                                                            |
+| ------------------------------ | ------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `POLYMARKET_DATA_API_BASE_URL` | `https://data-api.polymarket.com`                      | Worker uses the `_BASE_URL` name (distinct from API's `POLYMARKET_DATA_API_URL`) |
+| `POLYMARKET_GAMMA_BASE_URL`    | `https://gamma-api.polymarket.com`                     | Market metadata                                                                  |
+| `POLYMARKET_CLOB_WS_URL`       | `wss://ws-subscriptions-clob.polymarket.com/ws/market` | Persistent WS loop                                                               |
+| `WORKER_LOOP_A_MS`             | `10000`                                                | Balance snapshot                                                                 |
+| `WORKER_LOOP_B_MS`             | `30000`                                                | Open positions                                                                   |
+| `WORKER_LOOP_C_MS`             | `60000`                                                | Rewards                                                                          |
+| `WORKER_LOOP_D_MS`             | `300000`                                               | Closed trades + realized 30d                                                     |
+
+Note the inconsistency: API reads `POLYMARKET_DATA_API_URL`; worker reads `POLYMARKET_DATA_API_BASE_URL`. If consolidating, update both `src/portfolio/repositories/portfolio-trades.repository.ts` and `src/positions/polymarket-data.service.ts` alongside `worker/src/dgterminal_worker/config.ts`.
 
 ## Testing Conventions
 
-- **Unit tests** live alongside source files as `*.spec.ts` in `src/`
-- **E2E tests** live in `test/` and use `supertest` against a full `AppModule`
-- E2E tests must manually apply the same `ValidationPipe` config used in `main.ts` (NestJS does not apply global pipes automatically in test modules)
-- To mock `PolymarketClientService` in unit tests, instantiate it with a partial mock object typed as `Pick<PolymarketClientService, 'getOpenPositions'>` — do not mock `ClobClient` directly
-- The `JEST_WORKER_ID` guard in `PolymarketClientModule` means E2E tests get a stub client; both `getOpenPositions` and `getClosedPositions` return `[]` unless `PolymarketClientService` is mocked at the service layer
+- **API unit tests** live alongside source as `*.spec.ts` under `src/` (Jest, `rootDir: src/`).
+- **API e2e tests** live in `test/` with subdirs per module (`test/portfolio/`, `test/positions/`). Config: `test/jest-e2e.json`.
+- **E2E must manually install the same `ValidationPipe` config** as `main.ts` — Nest does not apply global pipes automatically in test modules. See `test/portfolio/portfolio-positions.e2e-spec.ts` for the canonical setup.
+- **Mocking repositories**: instantiate `PortfolioService` with `Pick<…, 'findByWallet'>`-typed mocks rather than full class instances. See existing tests in `src/portfolio/portfolio.service.spec.ts`.
+- **Mocking the DB pool**: pass a `{ query: jest.fn() }` object cast as `never` into `new PortfolioPositionsRepository(pool as never)`. See `src/portfolio/repositories/portfolio-repositories.spec.ts`.
+- **Mocking outbound HTTP (trades)**: `jest.spyOn(global, 'fetch').mockResolvedValue(...)`. Remember to `mockRestore()` when done.
+- **Worker tests** use `node:test` via `tsx --test`, not Jest. Do not mix Jest matchers/mocks into `worker/**/*.test.ts`.
