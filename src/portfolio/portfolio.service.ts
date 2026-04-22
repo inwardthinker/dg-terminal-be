@@ -16,6 +16,7 @@ import {
   HistoryPeriod,
   PortfolioKpis,
   PortfolioKpisRow,
+  PortfolioOpenPositionsSummary,
 } from './portfolio.types';
 
 @Injectable()
@@ -50,6 +51,12 @@ export class PortfolioService implements OnModuleDestroy {
     this.pool = new Pool({
       connectionString,
       ssl: { rejectUnauthorized: false },
+    });
+    this.pool.on('error', (error: Error) => {
+      this.logger.error(
+        'Postgres pool emitted an idle client error',
+        error.stack,
+      );
     });
   }
 
@@ -313,6 +320,21 @@ export class PortfolioService implements OnModuleDestroy {
       rewards_earned: rewardsEarned,
       reward_pc: rewardPc,
       num_trades: numTradesFromPolymarket ?? 0,
+    };
+  }
+
+  async getOpenPositionsSummary(
+    wallet: string,
+  ): Promise<PortfolioOpenPositionsSummary> {
+    const summary = await this.fetchOpenPositionsSummaryFromPolymarket(wallet);
+    if (summary) {
+      return summary;
+    }
+    return {
+      open_positions: 0,
+      total_exposure: 0,
+      largest_position: 0,
+      unrealized_pnl: 0,
     };
   }
 
@@ -741,6 +763,75 @@ export class PortfolioService implements OnModuleDestroy {
     }
 
     return null;
+  }
+
+  private async fetchOpenPositionsSummaryFromPolymarket(
+    wallet: string,
+  ): Promise<PortfolioOpenPositionsSummary | null> {
+    try {
+      const params = new URLSearchParams({
+        user: wallet,
+        sizeThreshold: '0',
+        limit: '500',
+      });
+      const response = await fetch(
+        `${this.polymarketDataApiUrl}/positions?${params.toString()}`,
+        {
+          headers: this.buildPolymarketDataApiHeaders(),
+          signal: AbortSignal.timeout(3000),
+        },
+      );
+      if (!response.ok) {
+        return null;
+      }
+
+      const payload = (await response.json()) as Array<{
+        size?: unknown;
+        curPrice?: unknown;
+        currentValue?: unknown;
+        cashPnl?: unknown;
+      }>;
+      if (!Array.isArray(payload)) {
+        return null;
+      }
+
+      let openPositions = 0;
+      let totalExposure = 0;
+      let largestPosition = 0;
+      let unrealizedPnl = 0;
+
+      for (const position of payload) {
+        const shares = toFiniteNumber(position.size);
+        if (shares <= 0) {
+          continue;
+        }
+
+        const directCurrentValue = toFiniteNumber(position.currentValue);
+        const exposure =
+          directCurrentValue > 0
+            ? directCurrentValue
+            : shares * toFiniteNumber(position.curPrice);
+        if (exposure <= 0) {
+          continue;
+        }
+
+        openPositions += 1;
+        totalExposure += exposure;
+        if (exposure > largestPosition) {
+          largestPosition = exposure;
+        }
+        unrealizedPnl += toFiniteNumber(position.cashPnl);
+      }
+
+      return {
+        open_positions: openPositions,
+        total_exposure: Number(totalExposure.toFixed(6)),
+        largest_position: Number(largestPosition.toFixed(6)),
+        unrealized_pnl: Number(unrealizedPnl.toFixed(6)),
+      };
+    } catch {
+      return null;
+    }
   }
 
   private buildPolymarketDataApiHeaders(): Record<string, string> | undefined {

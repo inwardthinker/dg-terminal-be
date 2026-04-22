@@ -14,6 +14,7 @@ import {
   ClosePositionResult,
   HistoryPeriod,
   PortfolioKpis,
+  PortfolioOpenPositionsSummary,
 } from './portfolio.types';
 import { ClosePositionDto } from './dto/close-position.dto';
 
@@ -22,6 +23,17 @@ const VALID_PERIODS = new Set<HistoryPeriod>(['7d', '30d', '90d', 'all']);
 @Controller('api/portfolio')
 export class PortfolioController {
   constructor(private readonly portfolioService: PortfolioService) {}
+
+  private validateWallet(wallet: string): void {
+    if (!wallet) {
+      throw new BadRequestException('wallet is required');
+    }
+    if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
+      throw new BadRequestException(
+        'wallet must be a valid 0x-prefixed address',
+      );
+    }
+  }
 
   @Get('history')
   async getHistory(
@@ -81,14 +93,15 @@ export class PortfolioController {
 
   @Get('kpis')
   async getKpis(@Query('wallet') wallet: string): Promise<PortfolioKpis> {
-    if (!wallet) {
-      throw new BadRequestException('wallet is required');
-    }
-    if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
-      throw new BadRequestException(
-        'wallet must be a valid 0x-prefixed address',
-      );
-    }
+    this.validateWallet(wallet);
     return this.portfolioService.getKpis(wallet);
+  }
+
+  @Get('open-positions-summary')
+  async getOpenPositionsSummary(
+    @Query('wallet') wallet: string,
+  ): Promise<PortfolioOpenPositionsSummary> {
+    this.validateWallet(wallet);
+    return this.portfolioService.getOpenPositionsSummary(wallet);
   }
 }

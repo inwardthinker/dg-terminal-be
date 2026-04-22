@@ -46,6 +46,13 @@ export type PortfolioKpis = {
   num_trades: number;
 };
 
+export type PortfolioOpenPositionsSummary = {
+  open_positions: number;
+  total_exposure: number;
+  largest_position: number;
+  unrealized_pnl: number;
+};
+
 export type PortfolioKpisRow = {
   balance: string | number | null;
   open_exposure: string | number | null;

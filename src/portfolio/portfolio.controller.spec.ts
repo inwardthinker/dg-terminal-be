@@ -6,6 +6,7 @@ import {
   BalanceSnapshot,
   ClosePositionResult,
   PortfolioKpis,
+  PortfolioOpenPositionsSummary,
 } from './portfolio.types';
 
 describe('PortfolioController', () => {
@@ -30,15 +31,24 @@ describe('PortfolioController', () => {
     reward_pc: 0.19,
     num_trades: 42,
   };
+  const openPositionsSummary: PortfolioOpenPositionsSummary = {
+    open_positions: 3,
+    total_exposure: 420.5,
+    largest_position: 210.25,
+    unrealized_pnl: 18.5,
+  };
 
   function buildController() {
     const service: Pick<
       PortfolioService,
-      'getHistory' | 'closePosition' | 'getKpis'
+      'getHistory' | 'closePosition' | 'getKpis' | 'getOpenPositionsSummary'
     > = {
       getHistory: jest.fn().mockResolvedValue(historyRows),
       closePosition: jest.fn().mockResolvedValue(fullCloseResult),
       getKpis: jest.fn().mockResolvedValue(kpis),
+      getOpenPositionsSummary: jest
+        .fn()
+        .mockResolvedValue(openPositionsSummary),
     };
     const controller = new PortfolioController(service as PortfolioService);
     return { controller, service };
@@ -101,5 +111,23 @@ describe('PortfolioController', () => {
     await expect(controller.getKpis('not-a-wallet')).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+
+  it('returns open positions summary for valid wallet', async () => {
+    const { controller, service } = buildController();
+    const wallet = '0x798a7921f5b2c684ecbaa7a6ae216a819fa6cc72';
+
+    const result = await controller.getOpenPositionsSummary(wallet);
+
+    expect(result).toEqual(openPositionsSummary);
+    expect(service.getOpenPositionsSummary).toHaveBeenCalledWith(wallet);
+  });
+
+  it('throws for invalid wallet on open positions summary endpoint', async () => {
+    const { controller } = buildController();
+
+    await expect(
+      controller.getOpenPositionsSummary('not-a-wallet'),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
