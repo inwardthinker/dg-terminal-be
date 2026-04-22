@@ -348,7 +348,7 @@ describe('PortfolioService', () => {
       createTradesRepositoryMock() as PortfolioTradesRepository,
     );
 
-    const result = await service.getSummary({ safe_wallet_address: wallet });
+    const result = await service.getSummary({ walletAddress: wallet });
     expect(result.summary).toEqual(summary);
     expect(mockSummaryRepository.findByWallet).toHaveBeenCalledWith(wallet);
   });
@@ -373,7 +373,7 @@ describe('PortfolioService', () => {
       createTradesRepositoryMock() as PortfolioTradesRepository,
     );
 
-    const result = await service.getSummary({ safe_wallet_address: wallet });
+    const result = await service.getSummary({ walletAddress: wallet });
     expect(result.summary).toEqual({
       balance: 0,
       open_exposure: 0,

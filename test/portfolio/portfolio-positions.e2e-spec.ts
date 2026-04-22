@@ -164,9 +164,9 @@ describe('Portfolio Positions (e2e)', () => {
       .expect(400);
   });
 
-  it('rejects invalid safe_wallet_address format for summary endpoint', async () => {
+  it('rejects invalid walletAddress format for summary endpoint', async () => {
     await request(app.getHttpServer())
-      .get('/api/portfolio/summary?safe_wallet_address=not-an-evm-address')
+      .get('/api/portfolio/summary?walletAddress=not-an-evm-address')
       .set(authHeader)
       .expect(400);
   });
@@ -262,7 +262,7 @@ describe('Portfolio Positions (e2e)', () => {
 
   it('returns 200 and summary shape when authenticated', async () => {
     const response = await request(app.getHttpServer())
-      .get(`/api/portfolio/summary?safe_wallet_address=${wallet}`)
+      .get(`/api/portfolio/summary?walletAddress=${wallet}`)
       .set(authHeader)
       .expect(200);
     const body = toSummaryResponse(response.body as unknown);

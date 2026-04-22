@@ -52,7 +52,7 @@ export class PortfolioService {
   }> {
     try {
       const summary = await this.summaryRepository.findByWallet(
-        query.safe_wallet_address,
+        query.walletAddress,
       );
       return {
         summary: summary ?? {

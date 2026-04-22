@@ -273,13 +273,13 @@
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/api/portfolio/summary?safe_wallet_address={{wallet}}",
+            "url": "{{baseUrl}}/api/portfolio/summary?walletAddress={{wallet}}",
             "description": "Portfolio summary sourced from `portfolio_summary`: balance, exposure, unrealized/realized PnL, rewards, derived ratios, and per-field freshness timestamps."
           },
           "response": []
         },
         {
-          "name": "GET summary — 400 (invalid safe_wallet_address)",
+          "name": "GET summary — 400 (invalid walletAddress)",
           "request": {
             "method": "GET",
             "header": [
@@ -294,8 +294,8 @@
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/api/portfolio/summary?safe_wallet_address=not-an-address",
-            "description": "Expect **400** — `safe_wallet_address` must match `^0x[a-fA-F0-9]{40}$`."
+            "url": "{{baseUrl}}/api/portfolio/summary?walletAddress=not-an-address",
+            "description": "Expect **400** — `walletAddress` must match `^0x[a-fA-F0-9]{40}$`."
           },
           "response": []
         },
@@ -310,7 +310,7 @@
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/api/portfolio/summary?safe_wallet_address={{wallet}}",
+            "url": "{{baseUrl}}/api/portfolio/summary?walletAddress={{wallet}}",
             "description": "Expect **401** when `Authorization` is missing or empty."
           },
           "response": []
