@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GetPortfolioTradesQueryDto } from '../dto/get-portfolio-trades.query.dto';
-import { PortfolioTrades } from '../types/portfolio-trades.type';
+import {
+  PortfolioTrade,
+  PortfolioTradeActivity,
+  PortfolioTradeOutcome,
+  PortfolioTrades,
+} from '../types/portfolio-trades.type';
 
 const SORT_BY_ALIAS_MAP: Record<string, 'TIMESTAMP' | 'TOKENS' | 'CASH'> = {
   timestamp: 'TIMESTAMP',
@@ -53,7 +58,7 @@ export class PortfolioTradesRepository {
     if (query.page !== undefined) params.set('page', String(query.page));
     if (query.per_page !== undefined)
       params.set('per_page', String(query.per_page));
-    if (query.period) params.set('period', query.period);
+    params.set('period', query.period ?? '30d');
     if (sortBy) params.set('sortBy', sortBy);
     if (sortDirection) params.set('sortDirection', sortDirection);
     if (query.sort_by) params.set('sort_by', query.sort_by);
@@ -94,6 +99,136 @@ export class PortfolioTradesRepository {
       throw new Error(`Polymarket trades request failed: ${response.status}`);
     }
 
-    return (await response.json()) as PortfolioTrades;
+    const payload = (await response.json()) as unknown;
+    if (!Array.isArray(payload)) return [];
+    return payload.map((row) => this.withNormalizedColumns(row));
+  }
+
+  private withNormalizedColumns(row: unknown): PortfolioTrade {
+    const raw = this.asRecord(row);
+    const timestamp = this.toNumber(raw.timestamp);
+    const date = timestamp
+      ? new Date(timestamp * 1000).toISOString()
+      : new Date(0).toISOString();
+    const entryPrice = this.toNullableNumber(raw.price);
+    const quantity = this.toNumber(raw.size);
+    const size =
+      this.toNullableNumber(raw.usdcSize) ??
+      (entryPrice !== null ? quantity * entryPrice : quantity);
+    const pnl =
+      this.toNullableNumber(raw.realizedPnl) ??
+      this.toNullableNumber(raw.cashPnl) ??
+      null;
+    const outcome = this.mapOutcome(raw, pnl);
+
+    return {
+      ...raw,
+      date,
+      market: this.toString(raw.title),
+      side: this.toString(raw.side),
+      entry_price: entryPrice,
+      exit_price: null,
+      size,
+      outcome,
+      pnl,
+      venue: 'Polymarket',
+    };
+  }
+
+  private mapOutcome(
+    raw: PortfolioTradeActivity,
+    pnl: number | null,
+  ): PortfolioTradeOutcome | null {
+    const candidates = [
+      raw.outcomeStatus,
+      raw.outcome_status,
+      raw.settlementOutcome,
+      raw.settlement_outcome,
+      raw.result,
+      raw.positionOutcome,
+      raw.position_outcome,
+      raw.status,
+      raw.outcome,
+    ];
+
+    for (const value of candidates) {
+      const mapped = this.mapOutcomeValue(value);
+      if (mapped) return mapped;
+    }
+
+    if (pnl !== null) {
+      if (pnl > 0) return 'WON';
+      if (pnl < 0) return 'LOST';
+      return 'PUSHED';
+    }
+
+    return null;
+  }
+
+  private mapOutcomeValue(value: unknown): PortfolioTradeOutcome | null {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toUpperCase();
+    if (!normalized) return null;
+    if (
+      normalized === 'WON' ||
+      normalized === 'WIN' ||
+      normalized === 'SUCCESS'
+    )
+      return 'WON';
+    if (
+      normalized === 'LOST' ||
+      normalized === 'LOSS' ||
+      normalized === 'LOSE' ||
+      normalized === 'FAILED'
+    ) {
+      return 'LOST';
+    }
+    if (
+      normalized === 'PUSHED' ||
+      normalized === 'PUSH' ||
+      normalized === 'VOID' ||
+      normalized === 'VOIDED' ||
+      normalized === 'DRAW'
+    ) {
+      return 'PUSHED';
+    }
+    return null;
+  }
+
+  private asRecord(value: unknown): PortfolioTradeActivity {
+    if (typeof value !== 'object' || value === null) return {};
+    return value as PortfolioTradeActivity;
+  }
+
+  private toString(value: unknown): string {
+    if (value === null || value === undefined) return '';
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean' ||
+      typeof value === 'bigint'
+    ) {
+      return String(value);
+    }
+    return '';
+  }
+
+  private toNumber(value: unknown): number {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number.parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
+  }
+
+  private toNullableNumber(value: unknown): number | null {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number.parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
   }
 }

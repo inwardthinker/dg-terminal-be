@@ -390,21 +390,21 @@ describe('PortfolioService', () => {
     });
   });
 
-  it('returns trades and forwards query params', async () => {
+  it('returns normalized settled trades from closed positions', async () => {
     const query = {
       wallet,
-      period: '7d' as const,
-      page: 2,
-      per_page: 25,
-      sort_by: 'created_at',
+      period: 'all' as const,
+      page: 1,
+      per_page: 1,
+      sort_by: 'date',
       sort_dir: 'desc' as const,
-      outcome: 'YES',
+      outcome: 'WON',
     };
     const mockTradesRepository: Pick<
       PortfolioTradesRepository,
       'findByWallet'
     > = {
-      findByWallet: jest.fn().mockResolvedValue(tradesSample),
+      findByWallet: jest.fn().mockResolvedValue([]),
     };
     const mockPositionsRepository: Pick<
       PortfolioPositionsRepository,
@@ -413,7 +413,20 @@ describe('PortfolioService', () => {
     const mockClosedPositionsRepository: Pick<
       PortfolioClosedPositionsRepository,
       'findByWallet'
-    > = { findByWallet: jest.fn().mockResolvedValue(closedSample) };
+    > = {
+      findByWallet: jest.fn().mockResolvedValue([
+        {
+          ...closedSample[0],
+          realized_pnl: 10,
+          closed_at: '2026-01-08T00:00:00.000Z',
+        },
+        {
+          ...closedSample[1],
+          realized_pnl: -5,
+          closed_at: '2026-01-01T00:00:00.000Z',
+        },
+      ]),
+    };
     const mockSummaryRepository: Pick<
       PortfolioSummaryRepository,
       'findByWallet'
@@ -428,16 +441,50 @@ describe('PortfolioService', () => {
 
     const result = await service.getTrades(query);
 
-    expect(result.trades).toEqual(tradesSample);
-    expect(mockTradesRepository.findByWallet).toHaveBeenCalledWith(query);
+    expect(result.trades).toHaveLength(1);
+    expect(result.page).toBe(1);
+    expect(result.per_page).toBe(1);
+    expect(result.total_count).toBe(1);
+    expect(result.total_pages).toBe(1);
+    expect(result.trades[0]).toEqual(
+      expect.objectContaining({
+        market: closedSample[0].market_name,
+        entry_price: closedSample[0].avg_entry_price,
+        exit_price: closedSample[0].current_price,
+        size: closedSample[0].cost_basis,
+        pnl: 10,
+        outcome: 'WON',
+      }),
+    );
   });
 
-  it('returns empty trades when repository throws', async () => {
+  it('enriches trades with closed position pnl/outcome/exit_price', async () => {
+    const enrichedTradesSample = [
+      {
+        id: 'trade-enrich',
+        conditionId: 'cond-1',
+        asset: 'asset-1',
+        pnl: null,
+        outcome: null,
+        exit_price: null,
+        venue: 'Polymarket',
+      },
+    ];
+    const closedForEnrichment: PortfolioClosedPosition[] = [
+      {
+        ...closedSample[0],
+        condition_id: 'cond-1',
+        outcome_token_id: 'asset-1',
+        realized_pnl: 42,
+        current_price: 0.88,
+        venue: 'Polymarket',
+      },
+    ];
     const mockTradesRepository: Pick<
       PortfolioTradesRepository,
       'findByWallet'
     > = {
-      findByWallet: jest.fn().mockRejectedValue(new Error('boom')),
+      findByWallet: jest.fn().mockResolvedValue(enrichedTradesSample),
     };
     const mockPositionsRepository: Pick<
       PortfolioPositionsRepository,
@@ -446,7 +493,7 @@ describe('PortfolioService', () => {
     const mockClosedPositionsRepository: Pick<
       PortfolioClosedPositionsRepository,
       'findByWallet'
-    > = { findByWallet: jest.fn().mockResolvedValue(closedSample) };
+    > = { findByWallet: jest.fn().mockResolvedValue(closedForEnrichment) };
     const mockSummaryRepository: Pick<
       PortfolioSummaryRepository,
       'findByWallet'
@@ -459,7 +506,117 @@ describe('PortfolioService', () => {
       mockTradesRepository as PortfolioTradesRepository,
     );
 
-    const result = await service.getTrades({ wallet });
-    expect(result).toEqual({ trades: [] });
+    const result = await service.getTrades({ wallet, period: 'all' });
+    const first = (result.trades as Array<Record<string, unknown>>)[0];
+    expect(first.pnl).toBe(42);
+    expect(first.outcome).toBe('WON');
+    expect(first.exit_price).toBe(0.88);
+    expect(result.total_count).toBe(1);
+    expect(result.total_pages).toBe(1);
+    expect(mockClosedPositionsRepository.findByWallet).toHaveBeenCalledWith({
+      wallet,
+      limit: 500,
+      offset: 0,
+      sort_by: 'closed_at',
+      sort_dir: 'desc',
+    });
+  });
+
+  it('falls back to conditionId-only enrichment when asset is empty', async () => {
+    const tradesWithoutAsset = [
+      {
+        id: 'trade-redeem',
+        conditionId: 'cond-redeem',
+        asset: '',
+        pnl: null,
+        outcome: null,
+        exit_price: null,
+        venue: 'Polymarket',
+      },
+    ];
+    const closedForConditionFallback: PortfolioClosedPosition[] = [
+      {
+        ...closedSample[0],
+        condition_id: 'cond-redeem',
+        outcome_token_id: 'some-asset',
+        realized_pnl: -3.5,
+        current_price: 1,
+        venue: 'Polymarket',
+      },
+    ];
+    const mockTradesRepository: Pick<
+      PortfolioTradesRepository,
+      'findByWallet'
+    > = {
+      findByWallet: jest.fn().mockResolvedValue(tradesWithoutAsset),
+    };
+    const mockPositionsRepository: Pick<
+      PortfolioPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(sample) };
+    const mockClosedPositionsRepository: Pick<
+      PortfolioClosedPositionsRepository,
+      'findByWallet'
+    > = {
+      findByWallet: jest.fn().mockResolvedValue(closedForConditionFallback),
+    };
+    const mockSummaryRepository: Pick<
+      PortfolioSummaryRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(null) };
+
+    const service = new PortfolioService(
+      mockPositionsRepository as PortfolioPositionsRepository,
+      mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
+      mockSummaryRepository as PortfolioSummaryRepository,
+      mockTradesRepository as PortfolioTradesRepository,
+    );
+
+    const result = await service.getTrades({ wallet, period: 'all' });
+    const first = (result.trades as Array<Record<string, unknown>>)[0];
+    expect(first.pnl).toBe(-3.5);
+    expect(first.outcome).toBe('LOST');
+    expect(first.exit_price).toBe(1);
+    expect(result.total_count).toBe(1);
+    expect(result.total_pages).toBe(1);
+  });
+
+  it('returns empty trades when repository throws', async () => {
+    const mockTradesRepository: Pick<
+      PortfolioTradesRepository,
+      'findByWallet'
+    > = {
+      findByWallet: jest.fn().mockResolvedValue([]),
+    };
+    const mockPositionsRepository: Pick<
+      PortfolioPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(sample) };
+    const mockSummaryRepository: Pick<
+      PortfolioSummaryRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(null) };
+
+    const erroringClosedRepository: Pick<
+      PortfolioClosedPositionsRepository,
+      'findByWallet'
+    > = {
+      findByWallet: jest.fn().mockRejectedValue(new Error('boom')),
+    };
+    const erroringService = new PortfolioService(
+      mockPositionsRepository as PortfolioPositionsRepository,
+      erroringClosedRepository as PortfolioClosedPositionsRepository,
+      mockSummaryRepository as PortfolioSummaryRepository,
+      mockTradesRepository as PortfolioTradesRepository,
+    );
+
+    const result = await erroringService.getTrades({ wallet });
+    expect(result).toEqual({
+      trades: [],
+      page: 1,
+      per_page: 25,
+      total_count: 0,
+      total_pages: 0,
+    });
   });
 });

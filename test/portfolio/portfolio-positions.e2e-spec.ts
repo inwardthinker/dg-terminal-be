@@ -22,6 +22,10 @@ type SummaryResponse = {
 
 type TradesResponse = {
   trades: unknown;
+  page: number;
+  per_page: number;
+  total_count: number;
+  total_pages: number;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -52,10 +56,23 @@ function toSummaryResponse(value: unknown): SummaryResponse {
 }
 
 function toTradesResponse(value: unknown): TradesResponse {
-  if (!isRecord(value) || !('trades' in value)) {
+  if (
+    !isRecord(value) ||
+    !('trades' in value) ||
+    typeof value.page !== 'number' ||
+    typeof value.per_page !== 'number' ||
+    typeof value.total_count !== 'number' ||
+    typeof value.total_pages !== 'number'
+  ) {
     throw new Error('Invalid trades response shape');
   }
-  return { trades: value.trades };
+  return {
+    trades: value.trades,
+    page: value.page,
+    per_page: value.per_page,
+    total_count: value.total_count,
+    total_pages: value.total_pages,
+  };
 }
 
 function expectTypeOfField(
@@ -294,6 +311,10 @@ describe('Portfolio Positions (e2e)', () => {
       .expect(200);
     const body = toTradesResponse(response.body as unknown);
     expect(body).toHaveProperty('trades');
+    expect(typeof body.page).toBe('number');
+    expect(typeof body.per_page).toBe('number');
+    expect(typeof body.total_count).toBe('number');
+    expect(typeof body.total_pages).toBe('number');
   });
 
   afterEach(async () => {

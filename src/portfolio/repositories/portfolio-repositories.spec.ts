@@ -60,9 +60,15 @@ describe('Portfolio repositories sort mappings', () => {
   it('builds trades API query with defaults and filters', async () => {
     const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
-      json: jest
-        .fn()
-        .mockResolvedValue([{ id: 'trade-1', type: 'TRADE', usdcSize: 12.34 }]),
+      json: jest.fn().mockResolvedValue([
+        {
+          id: 'trade-1',
+          type: 'TRADE',
+          usdcSize: 12.34,
+          outcomeStatus: 'won',
+          realizedPnl: 5.5,
+        },
+      ]),
     } as unknown as Response);
 
     const configService = {
@@ -123,14 +129,18 @@ describe('Portfolio repositories sort mappings', () => {
       wallet: '0x1111111111111111111111111111111111111111',
     });
     expect(Array.isArray(payload)).toBe(true);
-    expect(payload).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'TRADE',
-          usdcSize: 12.34,
-        }),
-      ]),
-    );
+    const first = payload[0] as Record<string, unknown>;
+    expect(first.type).toBe('TRADE');
+    expect(first.usdcSize).toBe(12.34);
+    expect(typeof first.date).toBe('string');
+    expect(typeof first.market).toBe('string');
+    expect(typeof first.side).toBe('string');
+    expect(first.entry_price).toBeNull();
+    expect(first.exit_price).toBeNull();
+    expect(typeof first.size).toBe('number');
+    expect(first.outcome).toBe('WON');
+    expect(first.pnl).toBe(5.5);
+    expect(first.venue).toBe('Polymarket');
 
     fetchMock.mockRestore();
   });
@@ -160,6 +170,64 @@ describe('Portfolio repositories sort mappings', () => {
     const url = ((fetchMock.mock.calls[0] as unknown[])[0] as string) ?? '';
     expect(url).toContain('sortBy=TIMESTAMP');
     expect(url).toContain('sortDirection=DESC');
+
+    fetchMock.mockRestore();
+  });
+
+  it('defaults period to 30d when omitted', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue([]),
+    } as unknown as Response);
+
+    const configService = {
+      get: jest.fn((key: string, fallback?: string) => {
+        if (key === 'POLYMARKET_DATA_API_URL') {
+          return 'https://data-api.polymarket.com';
+        }
+        return fallback ?? '';
+      }),
+    };
+    const repo = new PortfolioTradesRepository(configService as never);
+
+    await repo.findByWallet({
+      wallet: '0x1111111111111111111111111111111111111111',
+    });
+
+    const url = ((fetchMock.mock.calls[0] as unknown[])[0] as string) ?? '';
+    expect(url).toContain('period=30d');
+
+    fetchMock.mockRestore();
+  });
+
+  it('maps pushed outcome from raw outcome string', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue([{ id: 'trade-2', outcome: 'voided' }]),
+    } as unknown as Response);
+
+    const configService = {
+      get: jest.fn((key: string, fallback?: string) => {
+        if (key === 'POLYMARKET_DATA_API_URL') {
+          return 'https://data-api.polymarket.com';
+        }
+        return fallback ?? '';
+      }),
+    };
+    const repo = new PortfolioTradesRepository(configService as never);
+
+    const payload = await repo.findByWallet({
+      wallet: '0x1111111111111111111111111111111111111111',
+    });
+
+    expect(payload).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'trade-2',
+          outcome: 'PUSHED',
+        }),
+      ]),
+    );
 
     fetchMock.mockRestore();
   });
