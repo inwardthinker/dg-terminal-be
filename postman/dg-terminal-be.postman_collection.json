@@ -195,7 +195,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/portfolio/trades?wallet={{wallet}}",
-            "description": "Polymarket activity wrapper (`/activity`). Optional params: period (1d|7d|30d|all), page, per_page (default 25), sort_by, sort_dir, outcome."
+            "description": "Settled trades table backed by closed positions. Response includes 9 normalized columns plus pagination metadata: `page`, `per_page`, `total_count`, `total_pages`. Defaults: `period=30d`, `page=1`, `per_page=25`, sort by date desc."
           },
           "response": []
         },
@@ -216,7 +216,28 @@
               }
             ],
             "url": "{{baseUrl}}/api/portfolio/trades?wallet={{wallet}}&limit=30&offset=0&excludeDepositsWithdrawals=false&start=1776191400&end=1776882600&sortBy=TIMESTAMP&sortDirection=DESC",
-            "description": "Matches Polymarket /activity timestamp filtering parameters."
+            "description": "Compatible query using Polymarket-style timestamp params. Response still follows settled-trades normalized shape + pagination metadata."
+          },
+          "response": []
+        },
+        {
+          "name": "GET trades (outcome + pagination metadata)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{authorization}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/portfolio/trades?wallet={{wallet}}&period=30d&outcome=WON&page=1&per_page=25&sort_by=date&sort_dir=desc",
+            "description": "Filters settled trades by normalized outcome (WON|LOST|PUSHED) and returns pagination metadata for `Page X of Y` UI."
           },
           "response": []
         },
