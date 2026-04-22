@@ -154,6 +154,7 @@ export class PositionsPriceService {
       return {
         position_id: position.asset,
         no_of_shares: position.size,
+        category: position.category ?? 'Other',
         outcome: position.outcome ?? null,
         title: position.title ?? null,
         avg_price:
@@ -180,6 +181,7 @@ export class PositionsPriceService {
     return {
       position_id: position.asset,
       no_of_shares: position.size,
+      category: position.category ?? 'Other',
       outcome: position.outcome ?? null,
       title: position.title ?? null,
       avg_price:

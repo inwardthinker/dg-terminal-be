@@ -18,13 +18,7 @@ describe('PositionsPriceService', () => {
       ]),
     };
 
-    let listener:
-      | ((update: {
-          assetId?: string;
-          currentPrice?: number;
-          stale: boolean;
-        }) => void)
-      | null = null;
+    let listener: ((update: MarketPriceUpdate) => void) | undefined;
 
     const subscribeMock = jest
       .fn<() => void, [string[], (update: MarketPriceUpdate) => void]>()
@@ -53,6 +47,7 @@ describe('PositionsPriceService', () => {
     const emitted: Array<{
       position_id: string;
       no_of_shares: number;
+      category: string;
       avg_price: number | null;
       current_price: number | null;
       position_value: number | null;
@@ -71,6 +66,7 @@ describe('PositionsPriceService', () => {
       {
         position_id: 'asset-1',
         no_of_shares: 10,
+        category: 'Other',
         outcome: null,
         title: null,
         avg_price: 0.5,
@@ -83,6 +79,7 @@ describe('PositionsPriceService', () => {
       {
         position_id: 'asset-1',
         no_of_shares: 10,
+        category: 'Other',
         outcome: null,
         title: null,
         avg_price: 0.5,
@@ -118,13 +115,7 @@ describe('PositionsPriceService', () => {
       ]),
     };
 
-    let listener:
-      | ((update: {
-          assetId?: string;
-          currentPrice?: number;
-          stale: boolean;
-        }) => void)
-      | null = null;
+    let listener: ((update: MarketPriceUpdate) => void) | undefined;
 
     const subscribeMock = jest
       .fn<() => void, [string[], (update: MarketPriceUpdate) => void]>()
@@ -153,6 +144,7 @@ describe('PositionsPriceService', () => {
     const emitted: Array<{
       position_id: string;
       no_of_shares: number;
+      category: string;
       avg_price: number | null;
       current_price: number | null;
       position_value: number | null;
@@ -170,6 +162,7 @@ describe('PositionsPriceService', () => {
     expect(emitted).toContainEqual({
       position_id: 'asset-a',
       no_of_shares: 2,
+      category: 'Other',
       outcome: null,
       title: null,
       avg_price: null,
@@ -182,6 +175,7 @@ describe('PositionsPriceService', () => {
     expect(emitted).toContainEqual({
       position_id: 'asset-b',
       no_of_shares: 4,
+      category: 'Other',
       outcome: null,
       title: null,
       avg_price: null,
@@ -204,13 +198,7 @@ describe('PositionsPriceService', () => {
       ]),
     };
 
-    let listener:
-      | ((update: {
-          assetId?: string;
-          currentPrice?: number;
-          stale: boolean;
-        }) => void)
-      | null = null;
+    let listener: ((update: MarketPriceUpdate) => void) | undefined;
 
     const subscribeMock = jest
       .fn<() => void, [string[], (update: MarketPriceUpdate) => void]>()

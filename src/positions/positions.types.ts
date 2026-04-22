@@ -1,6 +1,8 @@
 export interface OpenPosition {
   asset: string;
   size: number;
+  eventId?: string;
+  category?: Category;
   endDate?: string;
   outcome?: string;
   title?: string;
@@ -17,9 +19,12 @@ export interface OpenPosition {
   mergeable?: boolean;
 }
 
+export type Category = 'Sports' | 'Politics' | 'Crypto' | 'Macro' | 'Other';
+
 export interface PositionPriceEvent {
   position_id: string;
   no_of_shares: number;
+  category: Category;
   outcome: string | null;
   title: string | null;
   avg_price: number | null;
