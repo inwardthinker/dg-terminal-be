@@ -22,9 +22,13 @@ describe('PortfolioController', () => {
   const kpis: PortfolioKpis = {
     balance: 1000,
     open_exposure: 600,
+    pc_exposure: 37.5,
     unrealized_pnl: 20,
+    un_pnl_pc: 3.33,
     realized_30d: 15,
     rewards_earned: 3,
+    reward_pc: 0.19,
+    num_trades: 42,
   };
 
   function buildController() {

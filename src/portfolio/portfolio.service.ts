@@ -271,13 +271,17 @@ export class PortfolioService implements OnModuleDestroy {
 
   async getKpis(wallet: string): Promise<PortfolioKpis> {
     const normalizedWallet = wallet.toLowerCase();
-    const [rows, openExposureFromApi, unrealizedPnlFromApi] = await Promise.all(
-      [
-        this.queryPortfolioSummaryByWallet(normalizedWallet),
-        this.fetchOpenExposureFromPolymarket(wallet),
-        this.fetchUnrealizedPnlFromPolymarket(wallet),
-      ],
-    );
+    const [
+      rows,
+      openExposureFromApi,
+      unrealizedPnlFromApi,
+      numTradesFromPolymarket,
+    ] = await Promise.all([
+      this.queryPortfolioSummaryByWallet(normalizedWallet),
+      this.fetchOpenExposureFromPolymarket(wallet),
+      this.fetchUnrealizedPnlFromPolymarket(wallet),
+      this.fetchNumTradesFromPolymarket(wallet),
+    ]);
 
     const row = rows[0];
     const cashBalance = row ? toNumber(row.balance) : 0;
@@ -293,13 +297,22 @@ export class PortfolioService implements OnModuleDestroy {
         : row
           ? toNumber(row.unrealized_pnl)
           : 0;
+    const totalPortfolioValue = Math.max(cashBalance + openExposure, 0);
+    const pcExposure = toPercent(openExposure, totalPortfolioValue);
+    const unPnlPc = toPercent(unresolvedUnrealizedPnl, openExposure);
+    const rewardsEarned = row ? toNumber(row.rewards_earned) : 0;
+    const rewardPc = toPercent(rewardsEarned, totalPortfolioValue);
 
     return {
       balance: cashBalance,
       open_exposure: openExposure,
+      pc_exposure: pcExposure,
       unrealized_pnl: unresolvedUnrealizedPnl,
+      un_pnl_pc: unPnlPc,
       realized_30d: row ? toNumber(row.realized_30d) : 0,
-      rewards_earned: row ? toNumber(row.rewards_earned) : 0,
+      rewards_earned: rewardsEarned,
+      reward_pc: rewardPc,
+      num_trades: numTradesFromPolymarket ?? 0,
     };
   }
 
@@ -656,6 +669,80 @@ export class PortfolioService implements OnModuleDestroy {
     }
   }
 
+  private async fetchNumTradesFromPolymarket(
+    wallet: string,
+  ): Promise<number | null> {
+    const paths = ['/traded', '/trades'];
+    for (const path of paths) {
+      try {
+        const params = new URLSearchParams({
+          user: wallet,
+          limit: '1',
+          offset: '0',
+        });
+        const response = await fetch(
+          `${this.polymarketDataApiUrl}${path}?${params.toString()}`,
+          {
+            headers: this.buildPolymarketDataApiHeaders(),
+            signal: AbortSignal.timeout(2500),
+          },
+        );
+        if (!response.ok) {
+          continue;
+        }
+
+        const payload = (await response.json()) as
+          | Array<unknown>
+          | {
+              traded?: unknown;
+              count?: unknown;
+              total?: unknown;
+              totalCount?: unknown;
+              total_count?: unknown;
+              data?: unknown;
+              results?: unknown;
+              trades?: unknown;
+            };
+
+        // Official /traded response shape: { user, traded: integer }.
+        if (typeof payload === 'object' && !Array.isArray(payload) && payload) {
+          const traded = toFiniteNumber(payload.traded);
+          if (traded >= 0) {
+            return traded;
+          }
+        }
+
+        if (Array.isArray(payload)) {
+          return payload.length;
+        }
+
+        const explicitCountCandidates = [
+          payload.count,
+          payload.total,
+          payload.totalCount,
+          payload.total_count,
+        ];
+        for (const candidate of explicitCountCandidates) {
+          const parsed = toFiniteNumber(candidate);
+          if (parsed > 0) {
+            return parsed;
+          }
+        }
+
+        const collections = [payload.data, payload.results, payload.trades];
+        for (const collection of collections) {
+          if (Array.isArray(collection)) {
+            return collection.length;
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
   private buildPolymarketDataApiHeaders(): Record<string, string> | undefined {
     if (
       !this.polymarketDataApiAuthHeaderName ||
@@ -687,6 +774,13 @@ function toFiniteNumber(value: unknown): number {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
+}
+
+function toPercent(value: number, total: number): number {
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) {
+    return 0;
+  }
+  return (value / total) * 100;
 }
 
 function isMissingRelationError(error: unknown): boolean {

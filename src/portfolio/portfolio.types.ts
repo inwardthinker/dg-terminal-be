@@ -37,9 +37,13 @@ export type ClosePositionResult =
 export type PortfolioKpis = {
   balance: number;
   open_exposure: number;
+  pc_exposure: number;
   unrealized_pnl: number;
+  un_pnl_pc: number;
   realized_30d: number;
   rewards_earned: number;
+  reward_pc: number;
+  num_trades: number;
 };
 
 export type PortfolioKpisRow = {

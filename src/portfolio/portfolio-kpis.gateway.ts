@@ -88,9 +88,13 @@ export class PortfolioKpisGateway
         kpis: {
           balance: 0,
           open_exposure: 0,
+          pc_exposure: 0,
           unrealized_pnl: 0,
+          un_pnl_pc: 0,
           realized_30d: 0,
           rewards_earned: 0,
+          reward_pc: 0,
+          num_trades: 0,
         },
       });
     }
