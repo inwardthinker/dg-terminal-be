@@ -52,6 +52,7 @@ describe('PositionsPriceService', () => {
     const service = moduleRef.get(PositionsPriceService);
     const emitted: Array<{
       position_id: string;
+      no_of_shares: number;
       avg_price: number | null;
       current_price: number | null;
       position_value: number | null;
@@ -69,6 +70,7 @@ describe('PositionsPriceService', () => {
     expect(emitted).toEqual([
       {
         position_id: 'asset-1',
+        no_of_shares: 10,
         outcome: null,
         title: null,
         avg_price: 0.5,
@@ -80,6 +82,7 @@ describe('PositionsPriceService', () => {
       },
       {
         position_id: 'asset-1',
+        no_of_shares: 10,
         outcome: null,
         title: null,
         avg_price: 0.5,
@@ -149,6 +152,7 @@ describe('PositionsPriceService', () => {
     const service = moduleRef.get(PositionsPriceService);
     const emitted: Array<{
       position_id: string;
+      no_of_shares: number;
       avg_price: number | null;
       current_price: number | null;
       position_value: number | null;
@@ -165,6 +169,7 @@ describe('PositionsPriceService', () => {
 
     expect(emitted).toContainEqual({
       position_id: 'asset-a',
+      no_of_shares: 2,
       outcome: null,
       title: null,
       avg_price: null,
@@ -176,6 +181,7 @@ describe('PositionsPriceService', () => {
     });
     expect(emitted).toContainEqual({
       position_id: 'asset-b',
+      no_of_shares: 4,
       outcome: null,
       title: null,
       avg_price: null,

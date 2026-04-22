@@ -19,6 +19,7 @@ export interface OpenPosition {
 
 export interface PositionPriceEvent {
   position_id: string;
+  no_of_shares: number;
   outcome: string | null;
   title: string | null;
   avg_price: number | null;
