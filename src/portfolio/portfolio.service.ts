@@ -14,6 +14,8 @@ import {
   ClosePositionRequest,
   ClosePositionResult,
   HistoryPeriod,
+  PortfolioKpis,
+  PortfolioKpisRow,
 } from './portfolio.types';
 
 @Injectable()
@@ -22,6 +24,9 @@ export class PortfolioService implements OnModuleDestroy {
   private readonly pool: Pool;
   private readonly venueOrderUrl?: string;
   private readonly venueTimeoutMs: number;
+  private readonly polymarketDataApiUrl: string;
+  private readonly polymarketDataApiAuthHeaderName: string;
+  private readonly polymarketDataApiAuthHeaderValue: string;
 
   constructor(private readonly configService: ConfigService) {
     const connectionString = this.buildConnectionString();
@@ -29,8 +34,23 @@ export class PortfolioService implements OnModuleDestroy {
     this.venueTimeoutMs = Number(
       this.configService.get<string>('VENUE_ORDER_TIMEOUT_MS') ?? '1500',
     );
+    this.polymarketDataApiUrl = this.configService.get<string>(
+      'POLYMARKET_DATA_API_URL',
+      'https://data-api.polymarket.com',
+    );
+    this.polymarketDataApiAuthHeaderName = this.configService.get<string>(
+      'POLYMARKET_DATA_API_AUTH_HEADER_NAME',
+      '',
+    );
+    this.polymarketDataApiAuthHeaderValue = this.configService.get<string>(
+      'POLYMARKET_DATA_API_AUTH_HEADER_VALUE',
+      '',
+    );
 
-    this.pool = new Pool({ connectionString });
+    this.pool = new Pool({
+      connectionString,
+      ssl: { rejectUnauthorized: false },
+    });
   }
 
   private buildConnectionString(): string {
@@ -249,6 +269,40 @@ export class PortfolioService implements OnModuleDestroy {
     };
   }
 
+  async getKpis(wallet: string): Promise<PortfolioKpis> {
+    const normalizedWallet = wallet.toLowerCase();
+    const [rows, openExposureFromApi, unrealizedPnlFromApi] = await Promise.all(
+      [
+        this.queryPortfolioSummaryByWallet(normalizedWallet),
+        this.fetchOpenExposureFromPolymarket(wallet),
+        this.fetchUnrealizedPnlFromPolymarket(wallet),
+      ],
+    );
+
+    const row = rows[0];
+    const cashBalance = row ? toNumber(row.balance) : 0;
+    const openExposure =
+      typeof openExposureFromApi === 'number'
+        ? openExposureFromApi
+        : row
+          ? toNumber(row.open_exposure)
+          : 0;
+    const unresolvedUnrealizedPnl =
+      typeof unrealizedPnlFromApi === 'number'
+        ? unrealizedPnlFromApi
+        : row
+          ? toNumber(row.unrealized_pnl)
+          : 0;
+
+    return {
+      balance: cashBalance,
+      open_exposure: openExposure,
+      unrealized_pnl: unresolvedUnrealizedPnl,
+      realized_30d: row ? toNumber(row.realized_30d) : 0,
+      rewards_earned: row ? toNumber(row.rewards_earned) : 0,
+    };
+  }
+
   private async fetchPosition(
     userId: string,
     positionId: string,
@@ -449,4 +503,202 @@ export class PortfolioService implements OnModuleDestroy {
       });
     }
   }
+
+  private async queryFallbackPortfolioSummary(
+    normalizedWallet: string,
+  ): Promise<PortfolioKpisRow[]> {
+    const walletColumns = ['proxy_wallet', 'wallet', 'address'];
+    for (const walletColumn of walletColumns) {
+      try {
+        const result = await this.pool.query<PortfolioKpisRow>(
+          `
+            SELECT
+              balance,
+              open_exposure,
+              unrealized_pnl,
+              realized_30d,
+              rewards_earned
+            FROM portfolio_summary
+            WHERE LOWER(${walletColumn}) = $1
+            ORDER BY updated_at DESC
+            LIMIT 1
+          `,
+          [normalizedWallet],
+        );
+        return result.rows;
+      } catch (error) {
+        if (!isMissingColumnError(error)) {
+          throw error;
+        }
+      }
+    }
+
+    const result = await this.pool.query<PortfolioKpisRow>(
+      `
+        SELECT
+          balance,
+          open_exposure,
+          unrealized_pnl,
+          realized_30d,
+          rewards_earned
+        FROM portfolio_summary
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `,
+    );
+    return result.rows;
+  }
+
+  private async queryPortfolioSummaryByWallet(
+    normalizedWallet: string,
+  ): Promise<PortfolioKpisRow[]> {
+    try {
+      const result = await this.pool.query<PortfolioKpisRow>(
+        `
+          SELECT
+            balance,
+            open_exposure,
+            unrealized_pnl,
+            realized_30d,
+            rewards_earned
+          FROM silver_dgterminal.portfolio_summary
+          WHERE LOWER(proxy_wallet) = $1
+          ORDER BY updated_at DESC
+          LIMIT 1
+        `,
+        [normalizedWallet],
+      );
+      return result.rows;
+    } catch (error) {
+      if (!isMissingRelationError(error)) {
+        throw error;
+      }
+      return this.queryFallbackPortfolioSummary(normalizedWallet);
+    }
+  }
+
+  private async fetchOpenExposureFromPolymarket(
+    wallet: string,
+  ): Promise<number | null> {
+    try {
+      const params = new URLSearchParams({ user: wallet });
+      const response = await fetch(
+        `${this.polymarketDataApiUrl}/value?${params.toString()}`,
+        {
+          headers: this.buildPolymarketDataApiHeaders(),
+          signal: AbortSignal.timeout(2000),
+        },
+      );
+      if (!response.ok) {
+        return null;
+      }
+      const payload = (await response.json()) as Array<{
+        user?: unknown;
+        value?: unknown;
+      }>;
+      if (!Array.isArray(payload) || payload.length === 0) {
+        return null;
+      }
+      const row = payload[0];
+      if (typeof row?.value !== 'number') {
+        return null;
+      }
+      return row.value;
+    } catch {
+      return null;
+    }
+  }
+
+  private async fetchUnrealizedPnlFromPolymarket(
+    wallet: string,
+  ): Promise<number | null> {
+    try {
+      const params = new URLSearchParams({
+        user: wallet,
+        sizeThreshold: '0',
+        limit: '500',
+      });
+      const response = await fetch(
+        `${this.polymarketDataApiUrl}/positions?${params.toString()}`,
+        {
+          headers: this.buildPolymarketDataApiHeaders(),
+          signal: AbortSignal.timeout(3000),
+        },
+      );
+      if (!response.ok) {
+        return null;
+      }
+      const payload = (await response.json()) as Array<{
+        cashPnl?: unknown;
+        percentPnl?: unknown;
+        size?: unknown;
+      }>;
+      if (!Array.isArray(payload)) {
+        return null;
+      }
+
+      let unrealized = 0;
+      for (const position of payload) {
+        const shares = toFiniteNumber(position.size);
+        if (shares <= 0) {
+          continue;
+        }
+        const percentPnl = toFiniteNumber(position.percentPnl);
+        // Exclude effectively lost rows (<= -99%).
+        if (percentPnl <= -99) {
+          continue;
+        }
+        unrealized += toFiniteNumber(position.cashPnl);
+      }
+      return unrealized;
+    } catch {
+      return null;
+    }
+  }
+
+  private buildPolymarketDataApiHeaders(): Record<string, string> | undefined {
+    if (
+      !this.polymarketDataApiAuthHeaderName ||
+      !this.polymarketDataApiAuthHeaderValue
+    ) {
+      return undefined;
+    }
+    return {
+      [this.polymarketDataApiAuthHeaderName]:
+        this.polymarketDataApiAuthHeaderValue,
+    };
+  }
+}
+
+function toNumber(value: string | number | null): number {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return Number.parseFloat(value);
+  }
+  return 0;
+}
+
+function toFiniteNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function isMissingRelationError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  return (error as { code?: string }).code === '42P01';
+}
+
+function isMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  return (error as { code?: string }).code === '42703';
 }

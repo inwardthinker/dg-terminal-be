@@ -33,3 +33,19 @@ export type ClosePositionResult =
       avg_entry_price: number;
       closed_at?: never;
     };
+
+export type PortfolioKpis = {
+  balance: number;
+  open_exposure: number;
+  unrealized_pnl: number;
+  realized_30d: number;
+  rewards_earned: number;
+};
+
+export type PortfolioKpisRow = {
+  balance: string | number | null;
+  open_exposure: string | number | null;
+  unrealized_pnl: string | number | null;
+  realized_30d: string | number | null;
+  rewards_earned: string | number | null;
+};

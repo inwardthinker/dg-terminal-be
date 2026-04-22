@@ -10,8 +10,10 @@ import {
 import { PortfolioService } from './portfolio.service';
 import {
   BalanceSnapshot,
+  ClosePositionRequest,
   ClosePositionResult,
   HistoryPeriod,
+  PortfolioKpis,
 } from './portfolio.types';
 import { ClosePositionDto } from './dto/close-position.dto';
 
@@ -49,14 +51,44 @@ export class PortfolioController {
       throw new BadRequestException('userId is required');
     }
 
-    const closeResult = await this.portfolioService.closePosition(userId, id, {
-      type: body.type,
-      percentage: body.percentage,
-    });
+    let request: ClosePositionRequest;
+    if (body.type === 'partial') {
+      const percentage = body.percentage;
+      if (typeof percentage !== 'number') {
+        throw new BadRequestException(
+          'percentage is required when type is partial',
+        );
+      }
+      request = {
+        type: 'partial',
+        percentage,
+      };
+    } else {
+      request = { type: 'full' };
+    }
+
+    const closeResult = await this.portfolioService.closePosition(
+      userId,
+      id,
+      request,
+    );
 
     return {
       success: true,
       ...closeResult,
     };
+  }
+
+  @Get('kpis')
+  async getKpis(@Query('wallet') wallet: string): Promise<PortfolioKpis> {
+    if (!wallet) {
+      throw new BadRequestException('wallet is required');
+    }
+    if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
+      throw new BadRequestException(
+        'wallet must be a valid 0x-prefixed address',
+      );
+    }
+    return this.portfolioService.getKpis(wallet);
   }
 }
