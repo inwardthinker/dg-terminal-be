@@ -91,13 +91,6 @@ export class PolymarketDataService {
     const payload = (await response.json()) as PolymarketPositionResponse[];
     const openPositions = payload
       .filter((position) => Number(position.size) > 0)
-      .filter((position) => {
-        if (typeof position.percentPnl !== 'number') {
-          return true;
-        }
-        // Exclude effectively resolved-lost rows from "open" streams.
-        return Number(position.percentPnl) > -99;
-      })
       .map((position) => ({
         asset: position.asset,
         size: Number(position.size),

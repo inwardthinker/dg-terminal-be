@@ -21,9 +21,7 @@
     "prepare": "husky",
     "lint-staged": "lint-staged",
     "git:sanitize": "bash scripts/git-sanitize-check.sh",
-    "db:migrate": "node scripts/run-sql-migration.js migrations",
-    "invoke:portfolio:local": "node scripts/invoke-portfolio-endpoint.js",
-    "invoke:portfolio:kpis:local": "node scripts/invoke-portfolio-endpoint.js kpis"
+    "db:migrate": "node scripts/run-sql-migration.js migrations"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
