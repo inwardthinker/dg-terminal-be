@@ -1,107 +1,36 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Query,
-  BadRequestException,
-} from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { GetPortfolioClosedPositionsQueryDto } from './dto/get-portfolio-closed-positions.query.dto';
+import { GetPortfolioPositionsQueryDto } from './dto/get-portfolio-positions.query.dto';
+import { GetPortfolioSummaryQueryDto } from './dto/get-portfolio-summary.query.dto';
+import { GetPortfolioTradesQueryDto } from './dto/get-portfolio-trades.query.dto';
+import { PortfolioAuthHeaderGuard } from './guards/portfolio-auth-header.guard';
 import { PortfolioService } from './portfolio.service';
-import {
-  BalanceSnapshot,
-  ClosePositionRequest,
-  ClosePositionResult,
-  HistoryPeriod,
-  PortfolioKpis,
-  PortfolioOpenPositionsSummary,
-} from './portfolio.types';
-import { ClosePositionDto } from './dto/close-position.dto';
-
-const VALID_PERIODS = new Set<HistoryPeriod>(['7d', '30d', '90d', 'all']);
 
 @Controller('api/portfolio')
 export class PortfolioController {
   constructor(private readonly portfolioService: PortfolioService) {}
 
-  private validateWallet(wallet: string): void {
-    if (!wallet) {
-      throw new BadRequestException('wallet is required');
-    }
-    if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
-      throw new BadRequestException(
-        'wallet must be a valid 0x-prefixed address',
-      );
-    }
+  @UseGuards(PortfolioAuthHeaderGuard)
+  @Get('positions')
+  getPositions(@Query() query: GetPortfolioPositionsQueryDto) {
+    return this.portfolioService.getPositions(query);
   }
 
-  @Get('history')
-  async getHistory(
-    @Query('period') period: string,
-    @Query('userId') userId: string,
-  ): Promise<BalanceSnapshot[]> {
-    if (!userId) {
-      throw new BadRequestException('userId is required');
-    }
-
-    if (!period || !VALID_PERIODS.has(period as HistoryPeriod)) {
-      throw new BadRequestException(
-        `Invalid period. Must be one of: ${[...VALID_PERIODS].join(', ')}`,
-      );
-    }
-
-    return this.portfolioService.getHistory(userId, period as HistoryPeriod);
+  @UseGuards(PortfolioAuthHeaderGuard)
+  @Get('closed-positions')
+  getClosedPositions(@Query() query: GetPortfolioClosedPositionsQueryDto) {
+    return this.portfolioService.getClosedPositions(query);
   }
 
-  @Post('positions/:id/close')
-  async closePosition(
-    @Param('id') id: string,
-    @Query('userId') userId: string,
-    @Body() body: ClosePositionDto,
-  ): Promise<{ success: true } & ClosePositionResult> {
-    if (!userId) {
-      throw new BadRequestException('userId is required');
-    }
-
-    let request: ClosePositionRequest;
-    if (body.type === 'partial') {
-      const percentage = body.percentage;
-      if (typeof percentage !== 'number') {
-        throw new BadRequestException(
-          'percentage is required when type is partial',
-        );
-      }
-      request = {
-        type: 'partial',
-        percentage,
-      };
-    } else {
-      request = { type: 'full' };
-    }
-
-    const closeResult = await this.portfolioService.closePosition(
-      userId,
-      id,
-      request,
-    );
-
-    return {
-      success: true,
-      ...closeResult,
-    };
+  @UseGuards(PortfolioAuthHeaderGuard)
+  @Get('summary')
+  getSummary(@Query() query: GetPortfolioSummaryQueryDto) {
+    return this.portfolioService.getSummary(query);
   }
 
-  @Get('kpis')
-  async getKpis(@Query('wallet') wallet: string): Promise<PortfolioKpis> {
-    this.validateWallet(wallet);
-    return this.portfolioService.getKpis(wallet);
-  }
-
-  @Get('open-positions-summary')
-  async getOpenPositionsSummary(
-    @Query('wallet') wallet: string,
-  ): Promise<PortfolioOpenPositionsSummary> {
-    this.validateWallet(wallet);
-    return this.portfolioService.getOpenPositionsSummary(wallet);
+  @UseGuards(PortfolioAuthHeaderGuard)
+  @Get('trades')
+  getTrades(@Query() query: GetPortfolioTradesQueryDto) {
+    return this.portfolioService.getTrades(query);
   }
 }
