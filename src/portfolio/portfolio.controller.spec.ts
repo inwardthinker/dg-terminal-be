@@ -25,15 +25,57 @@ describe('PortfolioController history endpoint', () => {
   });
 
   it('delegates valid requests to service', async () => {
-    const snapshots = [{ date: '2026-01-01', balance_value: 42 }];
-    const getHistoryMock = jest.fn().mockResolvedValue(snapshots);
+    const historyResponse = {
+      userId: 123,
+      asOfDate: '2026-01-01',
+      points: [{ date: '2026-01-01', balanceValue: 42, dailyChange: 0 }],
+      ranges: {
+        '7d': {
+          startIndex: 0,
+          endIndex: 0,
+          pointsCount: 1,
+          insufficientHistory: true,
+          startValue: 42,
+          endValue: 42,
+          changePct: 0,
+        },
+        '30d': {
+          startIndex: 0,
+          endIndex: 0,
+          pointsCount: 1,
+          insufficientHistory: true,
+          startValue: 42,
+          endValue: 42,
+          changePct: 0,
+        },
+        '90d': {
+          startIndex: 0,
+          endIndex: 0,
+          pointsCount: 1,
+          insufficientHistory: true,
+          startValue: 42,
+          endValue: 42,
+          changePct: 0,
+        },
+        all: {
+          startIndex: 0,
+          endIndex: 0,
+          pointsCount: 1,
+          insufficientHistory: false,
+          startValue: 42,
+          endValue: 42,
+          changePct: 0,
+        },
+      },
+    };
+    const getHistoryMock = jest.fn().mockResolvedValue(historyResponse);
     const service = {
       getHistory: getHistoryMock,
     } as unknown as PortfolioService;
     const controller = new PortfolioController(service);
 
     await expect(controller.getHistory('30d', '123')).resolves.toEqual(
-      snapshots,
+      historyResponse,
     );
     expect(getHistoryMock).toHaveBeenCalledWith('123', '30d');
   });

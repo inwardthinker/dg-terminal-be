@@ -1,44 +1,25 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Pool } from 'pg';
 import { PG_POOL } from '../../database/database.constants';
 import {
   BalanceSnapshot,
   BalanceSnapshotRow,
-  HistoryPeriod,
 } from '../types/portfolio-history.type';
 
 @Injectable()
 export class PortfolioHistoryRepository {
+  private readonly logger = new Logger(PortfolioHistoryRepository.name);
+
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
-  async findByUserId(
-    userId: string,
-    period: HistoryPeriod,
-  ): Promise<BalanceSnapshot[]> {
+  async findByUserId(userId: string): Promise<BalanceSnapshot[]> {
     const query = `
-      WITH latest AS (
-        SELECT MAX(snapshot_date) AS max_date
-        FROM equity_snapshots_user
-        WHERE user_id = $1::BIGINT
-      ),
-      raw AS (
+      WITH raw AS (
         SELECT
           snapshot_date::date AS snapshot_date,
           balance_value
         FROM equity_snapshots_user
         WHERE user_id = $1::BIGINT
-          AND (
-            $2::text = 'all'
-            OR snapshot_date >= (
-              (SELECT max_date FROM latest) -
-              CASE
-                WHEN $2::text = '7d' THEN INTERVAL '6 days'
-                WHEN $2::text = '30d' THEN INTERVAL '29 days'
-                WHEN $2::text = '90d' THEN INTERVAL '89 days'
-                ELSE INTERVAL '0 days'
-              END
-            )
-          )
       ),
       date_bounds AS (
         SELECT MIN(snapshot_date) AS min_date, MAX(snapshot_date) AS max_date
@@ -62,22 +43,23 @@ export class PortfolioHistoryRepository {
       ORDER BY s.date ASC
     `;
 
-    const { rows } = await this.pool.query<BalanceSnapshotRow>(query, [
-      userId,
-      period,
-    ]);
+    try {
+      const { rows } = await this.pool.query<BalanceSnapshotRow>(query, [
+        userId,
+      ]);
 
-    const snapshots = rows
-      .filter((row) => row.balance_value !== null)
-      .map((row) => ({
-        date: row.date,
-        balance_value: Number(row.balance_value),
-      }));
-
-    if (snapshots.length < 3) {
-      return [];
+      return rows
+        .filter((row) => row.balance_value !== null)
+        .map((row) => ({
+          date: row.date,
+          balanceValue: Number(row.balance_value),
+        }));
+    } catch (error) {
+      this.logger.error(
+        `history query failed for userId=${userId}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw error;
     }
-
-    return snapshots;
   }
 }
