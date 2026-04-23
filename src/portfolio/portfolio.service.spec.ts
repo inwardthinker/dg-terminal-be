@@ -648,9 +648,11 @@ describe('PortfolioService', () => {
       PortfolioHistoryRepository,
       'findByUserId'
     > = {
-      findByUserId: jest
-        .fn()
-        .mockResolvedValue([{ date: '2026-01-01', balance_value: 100 }]),
+      findByUserId: jest.fn().mockResolvedValue([
+        { date: '2026-01-01', balanceValue: 100 },
+        { date: '2026-01-02', balanceValue: 101.25 },
+        { date: '2026-01-03', balanceValue: 99.5 },
+      ]),
     };
 
     const service = new PortfolioService(
@@ -663,11 +665,17 @@ describe('PortfolioService', () => {
 
     const result = await service.getHistory('123', '7d');
 
-    expect(result).toEqual([{ date: '2026-01-01', balance_value: 100 }]);
-    expect(mockHistoryRepository.findByUserId).toHaveBeenCalledWith(
-      '123',
-      '7d',
-    );
+    expect(result.userId).toBe(123);
+    expect(result.asOfDate).toBe('2026-01-03');
+    expect(result.points).toEqual([
+      { date: '2026-01-01', balanceValue: 100, dailyChange: 0 },
+      { date: '2026-01-02', balanceValue: 101.25, dailyChange: 1.25 },
+      { date: '2026-01-03', balanceValue: 99.5, dailyChange: -1.75 },
+    ]);
+    expect(result.ranges['7d'].pointsCount).toBe(3);
+    expect(result.ranges['7d'].insufficientHistory).toBe(true);
+    expect(result.ranges.all.pointsCount).toBe(3);
+    expect(mockHistoryRepository.findByUserId).toHaveBeenCalledWith('123');
   });
 
   it('returns empty history when repository throws', async () => {
@@ -702,6 +710,48 @@ describe('PortfolioService', () => {
       mockHistoryRepository as PortfolioHistoryRepository,
     );
 
-    await expect(service.getHistory('123', '30d')).resolves.toEqual([]);
+    await expect(service.getHistory('123', '30d')).resolves.toEqual({
+      userId: 123,
+      asOfDate: null,
+      points: [],
+      ranges: {
+        '7d': {
+          startIndex: -1,
+          endIndex: -1,
+          pointsCount: 0,
+          insufficientHistory: true,
+          startValue: 0,
+          endValue: 0,
+          changePct: 0,
+        },
+        '30d': {
+          startIndex: -1,
+          endIndex: -1,
+          pointsCount: 0,
+          insufficientHistory: true,
+          startValue: 0,
+          endValue: 0,
+          changePct: 0,
+        },
+        '90d': {
+          startIndex: -1,
+          endIndex: -1,
+          pointsCount: 0,
+          insufficientHistory: true,
+          startValue: 0,
+          endValue: 0,
+          changePct: 0,
+        },
+        all: {
+          startIndex: -1,
+          endIndex: -1,
+          pointsCount: 0,
+          insufficientHistory: true,
+          startValue: 0,
+          endValue: 0,
+          changePct: 0,
+        },
+      },
+    });
   });
 });

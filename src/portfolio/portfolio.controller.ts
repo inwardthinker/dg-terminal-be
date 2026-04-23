@@ -11,7 +11,10 @@ import { GetPortfolioSummaryQueryDto } from './dto/get-portfolio-summary.query.d
 import { GetPortfolioTradesQueryDto } from './dto/get-portfolio-trades.query.dto';
 import { PortfolioAuthHeaderGuard } from './guards/portfolio-auth-header.guard';
 import { PortfolioService } from './portfolio.service';
-import { BalanceSnapshot, HistoryPeriod } from './types/portfolio-history.type';
+import {
+  HistoryPeriod,
+  PortfolioHistoryResponse,
+} from './types/portfolio-history.type';
 
 const VALID_PERIODS = new Set<HistoryPeriod>(['7d', '30d', '90d', 'all']);
 
@@ -23,7 +26,7 @@ export class PortfolioController {
   getHistory(
     @Query('period') period: string,
     @Query('userId') userId: string,
-  ): Promise<BalanceSnapshot[]> {
+  ): Promise<PortfolioHistoryResponse> {
     if (!userId) {
       throw new BadRequestException('userId is required');
     }

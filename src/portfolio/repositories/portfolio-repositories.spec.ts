@@ -69,12 +69,15 @@ describe('Portfolio repositories sort mappings', () => {
     };
     const repo = new PortfolioHistoryRepository(pool as never);
 
-    const snapshots = await repo.findByUserId('123', '7d');
+    const snapshots = await repo.findByUserId('123');
 
     const firstCall = pool.query.mock.calls[0] as unknown[] | undefined;
     const sql = (firstCall?.[0] as string | undefined) ?? '';
     expect(sql).toContain('FROM equity_snapshots_user');
-    expect(snapshots).toEqual([]);
+    expect(snapshots).toEqual([
+      { date: '2026-01-01', balanceValue: 100 },
+      { date: '2026-01-02', balanceValue: 101 },
+    ]);
   });
 
   it('returns normalized history snapshots for enough points', async () => {
@@ -89,12 +92,12 @@ describe('Portfolio repositories sort mappings', () => {
     };
     const repo = new PortfolioHistoryRepository(pool as never);
 
-    const snapshots = await repo.findByUserId('123', '30d');
+    const snapshots = await repo.findByUserId('123');
 
     expect(snapshots).toEqual([
-      { date: '2026-01-01', balance_value: 100 },
-      { date: '2026-01-02', balance_value: 101.25 },
-      { date: '2026-01-03', balance_value: 99.5 },
+      { date: '2026-01-01', balanceValue: 100 },
+      { date: '2026-01-02', balanceValue: 101.25 },
+      { date: '2026-01-03', balanceValue: 99.5 },
     ]);
   });
 

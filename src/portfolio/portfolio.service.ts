@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { GetPortfolioClosedPositionsQueryDto } from './dto/get-portfolio-closed-positions.query.dto';
 import { GetPortfolioPositionsQueryDto } from './dto/get-portfolio-positions.query.dto';
 import { GetPortfolioSummaryQueryDto } from './dto/get-portfolio-summary.query.dto';
@@ -10,12 +10,18 @@ import { PortfolioSummaryRepository } from './repositories/portfolio-summary.rep
 import { PortfolioTradesRepository } from './repositories/portfolio-trades.repository';
 import { PortfolioHistoryRepository } from './repositories/portfolio-history.repository';
 import { PortfolioClosedPosition } from './types/portfolio-closed-position.type';
-import { BalanceSnapshot, HistoryPeriod } from './types/portfolio-history.type';
+import {
+  HistoryPeriod,
+  HistoryPoint,
+  PortfolioHistoryResponse,
+} from './types/portfolio-history.type';
 import { PortfolioPosition } from './types/portfolio-position.type';
 import { PortfolioTrade, PortfolioTrades } from './types/portfolio-trades.type';
 
 @Injectable()
 export class PortfolioService {
+  private readonly logger = new Logger(PortfolioService.name);
+
   constructor(
     private readonly positionsRepository: PortfolioPositionsRepository,
     private readonly closedPositionsRepository: PortfolioClosedPositionsRepository,
@@ -149,16 +155,124 @@ export class PortfolioService {
   async getHistory(
     userId: string,
     period: HistoryPeriod,
-  ): Promise<BalanceSnapshot[]> {
+  ): Promise<PortfolioHistoryResponse> {
+    const emptyRanges = this.buildRanges([]);
+    const parsedUserId = Number.parseInt(userId, 10);
+
     if (!this.historyRepository) {
-      return [];
+      return {
+        userId: Number.isNaN(parsedUserId) ? 0 : parsedUserId,
+        asOfDate: null,
+        points: [],
+        ranges: emptyRanges,
+      };
     }
 
     try {
-      return await this.historyRepository.findByUserId(userId, period);
-    } catch {
+      const allSnapshots = await this.historyRepository.findByUserId(userId);
+      const ranges = this.buildRanges(allSnapshots);
+      const selectedSnapshots = this.sliceByPeriod(
+        allSnapshots,
+        period,
+        ranges,
+      );
+      const points = this.toHistoryPoints(selectedSnapshots);
+
+      return {
+        userId: Number.isNaN(parsedUserId) ? 0 : parsedUserId,
+        asOfDate: points.length > 0 ? points[points.length - 1].date : null,
+        points,
+        ranges,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to fetch portfolio history for userId=${userId}, period=${period}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      return {
+        userId: Number.isNaN(parsedUserId) ? 0 : parsedUserId,
+        asOfDate: null,
+        points: [],
+        ranges: emptyRanges,
+      };
+    }
+  }
+
+  private toHistoryPoints(
+    snapshots: Array<{ date: string; balanceValue: number }>,
+  ): HistoryPoint[] {
+    return snapshots.map((snapshot, index) => {
+      const previous = index > 0 ? snapshots[index - 1].balanceValue : null;
+      return {
+        date: snapshot.date,
+        balanceValue: snapshot.balanceValue,
+        dailyChange:
+          previous === null
+            ? 0
+            : Number((snapshot.balanceValue - previous).toFixed(2)),
+      };
+    });
+  }
+
+  private sliceByPeriod(
+    snapshots: Array<{ date: string; balanceValue: number }>,
+    period: HistoryPeriod,
+    ranges: PortfolioHistoryResponse['ranges'],
+  ): Array<{ date: string; balanceValue: number }> {
+    const range = ranges[period];
+    if (range.pointsCount <= 0 || range.startIndex < 0 || range.endIndex < 0) {
       return [];
     }
+    return snapshots.slice(range.startIndex, range.endIndex + 1);
+  }
+
+  private buildRanges(
+    snapshots: Array<{ date: string; balanceValue: number }>,
+  ): PortfolioHistoryResponse['ranges'] {
+    const buildRange = (windowSize: number | null) => {
+      const total = snapshots.length;
+      if (total === 0) {
+        return {
+          startIndex: -1,
+          endIndex: -1,
+          pointsCount: 0,
+          insufficientHistory: true,
+          startValue: 0,
+          endValue: 0,
+          changePct: 0,
+        };
+      }
+
+      const pointsCount =
+        windowSize === null ? total : Math.min(total, windowSize);
+      const startIndex = total - pointsCount;
+      const endIndex = total - 1;
+      const startValue = snapshots[startIndex].balanceValue;
+      const endValue = snapshots[endIndex].balanceValue;
+      const insufficientHistory =
+        windowSize === null ? false : total < windowSize;
+      const changePct =
+        startValue === 0
+          ? 0
+          : Number((((endValue - startValue) / startValue) * 100).toFixed(2));
+
+      return {
+        startIndex,
+        endIndex,
+        pointsCount,
+        insufficientHistory,
+        startValue,
+        endValue,
+        changePct,
+      };
+    };
+
+    return {
+      '7d': buildRange(7),
+      '30d': buildRange(30),
+      '90d': buildRange(90),
+      all: buildRange(null),
+    };
   }
 
   private buildTradesFromClosedPositions(
