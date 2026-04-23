@@ -1,4 +1,5 @@
 import { PortfolioClosedPositionsRepository } from './portfolio-closed-positions.repository';
+import { PortfolioHistoryRepository } from './portfolio-history.repository';
 import { PortfolioPositionsRepository } from './portfolio-positions.repository';
 import { PortfolioSummaryRepository } from './portfolio-summary.repository';
 import { PortfolioTradesRepository } from './portfolio-trades.repository';
@@ -55,6 +56,46 @@ describe('Portfolio repositories sort mappings', () => {
     expect(sql).toContain('FROM portfolio_summary');
     expect(sql).toContain('COALESCE(SUM(balance), 0)');
     expect(sql).toContain('MIN(balance_last_updated)');
+  });
+
+  it('queries equity snapshots and returns [] when fewer than 3 points', async () => {
+    const pool: MockPool = {
+      query: jest.fn().mockResolvedValue({
+        rows: [
+          { date: '2026-01-01', balance_value: '100' },
+          { date: '2026-01-02', balance_value: '101' },
+        ],
+      }),
+    };
+    const repo = new PortfolioHistoryRepository(pool as never);
+
+    const snapshots = await repo.findByUserId('123', '7d');
+
+    const firstCall = pool.query.mock.calls[0] as unknown[] | undefined;
+    const sql = (firstCall?.[0] as string | undefined) ?? '';
+    expect(sql).toContain('FROM equity_snapshots_user');
+    expect(snapshots).toEqual([]);
+  });
+
+  it('returns normalized history snapshots for enough points', async () => {
+    const pool: MockPool = {
+      query: jest.fn().mockResolvedValue({
+        rows: [
+          { date: '2026-01-01', balance_value: '100' },
+          { date: '2026-01-02', balance_value: '101.25' },
+          { date: '2026-01-03', balance_value: 99.5 },
+        ],
+      }),
+    };
+    const repo = new PortfolioHistoryRepository(pool as never);
+
+    const snapshots = await repo.findByUserId('123', '30d');
+
+    expect(snapshots).toEqual([
+      { date: '2026-01-01', balance_value: 100 },
+      { date: '2026-01-02', balance_value: 101.25 },
+      { date: '2026-01-03', balance_value: 99.5 },
+    ]);
   });
 
   it('builds trades API query with defaults and filters', async () => {

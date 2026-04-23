@@ -5,6 +5,7 @@ import { PortfolioClosedPositionsRepository } from './repositories/portfolio-clo
 import { PortfolioPositionsRepository } from './repositories/portfolio-positions.repository';
 import { PortfolioSummaryRepository } from './repositories/portfolio-summary.repository';
 import { PortfolioTradesRepository } from './repositories/portfolio-trades.repository';
+import { PortfolioHistoryRepository } from './repositories/portfolio-history.repository';
 import { PortfolioService } from './portfolio.service';
 
 @Module({
@@ -16,6 +17,7 @@ import { PortfolioService } from './portfolio.service';
     PortfolioClosedPositionsRepository,
     PortfolioSummaryRepository,
     PortfolioTradesRepository,
+    PortfolioHistoryRepository,
   ],
 })
 export class PortfolioModule {}
