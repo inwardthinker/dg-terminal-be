@@ -1,5 +1,6 @@
 import { PortfolioService } from './portfolio.service';
 import { PortfolioClosedPositionsRepository } from './repositories/portfolio-closed-positions.repository';
+import { PortfolioHistoryRepository } from './repositories/portfolio-history.repository';
 import { PortfolioPositionsRepository } from './repositories/portfolio-positions.repository';
 import { PortfolioSummaryRepository } from './repositories/portfolio-summary.repository';
 import { PortfolioTradesRepository } from './repositories/portfolio-trades.repository';
@@ -624,5 +625,83 @@ describe('PortfolioService', () => {
       total_count: 0,
       total_pages: 0,
     });
+  });
+
+  it('returns history snapshots from history repository', async () => {
+    const mockPositionsRepository: Pick<
+      PortfolioPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue([]) };
+    const mockClosedPositionsRepository: Pick<
+      PortfolioClosedPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue([]) };
+    const mockSummaryRepository: Pick<
+      PortfolioSummaryRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(null) };
+    const mockTradesRepository: Pick<
+      PortfolioTradesRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue([]) };
+    const mockHistoryRepository: Pick<
+      PortfolioHistoryRepository,
+      'findByUserId'
+    > = {
+      findByUserId: jest
+        .fn()
+        .mockResolvedValue([{ date: '2026-01-01', balance_value: 100 }]),
+    };
+
+    const service = new PortfolioService(
+      mockPositionsRepository as PortfolioPositionsRepository,
+      mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
+      mockSummaryRepository as PortfolioSummaryRepository,
+      mockTradesRepository as PortfolioTradesRepository,
+      mockHistoryRepository as PortfolioHistoryRepository,
+    );
+
+    const result = await service.getHistory('123', '7d');
+
+    expect(result).toEqual([{ date: '2026-01-01', balance_value: 100 }]);
+    expect(mockHistoryRepository.findByUserId).toHaveBeenCalledWith(
+      '123',
+      '7d',
+    );
+  });
+
+  it('returns empty history when repository throws', async () => {
+    const mockPositionsRepository: Pick<
+      PortfolioPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue([]) };
+    const mockClosedPositionsRepository: Pick<
+      PortfolioClosedPositionsRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue([]) };
+    const mockSummaryRepository: Pick<
+      PortfolioSummaryRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue(null) };
+    const mockTradesRepository: Pick<
+      PortfolioTradesRepository,
+      'findByWallet'
+    > = { findByWallet: jest.fn().mockResolvedValue([]) };
+    const mockHistoryRepository: Pick<
+      PortfolioHistoryRepository,
+      'findByUserId'
+    > = {
+      findByUserId: jest.fn().mockRejectedValue(new Error('boom')),
+    };
+
+    const service = new PortfolioService(
+      mockPositionsRepository as PortfolioPositionsRepository,
+      mockClosedPositionsRepository as PortfolioClosedPositionsRepository,
+      mockSummaryRepository as PortfolioSummaryRepository,
+      mockTradesRepository as PortfolioTradesRepository,
+      mockHistoryRepository as PortfolioHistoryRepository,
+    );
+
+    await expect(service.getHistory('123', '30d')).resolves.toEqual([]);
   });
 });

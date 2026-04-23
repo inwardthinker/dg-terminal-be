@@ -8,7 +8,9 @@ import { PortfolioClosedPositionsRepository } from './repositories/portfolio-clo
 import { PortfolioPositionsRepository } from './repositories/portfolio-positions.repository';
 import { PortfolioSummaryRepository } from './repositories/portfolio-summary.repository';
 import { PortfolioTradesRepository } from './repositories/portfolio-trades.repository';
+import { PortfolioHistoryRepository } from './repositories/portfolio-history.repository';
 import { PortfolioClosedPosition } from './types/portfolio-closed-position.type';
+import { BalanceSnapshot, HistoryPeriod } from './types/portfolio-history.type';
 import { PortfolioPosition } from './types/portfolio-position.type';
 import { PortfolioTrade, PortfolioTrades } from './types/portfolio-trades.type';
 
@@ -19,6 +21,7 @@ export class PortfolioService {
     private readonly closedPositionsRepository: PortfolioClosedPositionsRepository,
     private readonly summaryRepository: PortfolioSummaryRepository,
     private readonly tradesRepository: PortfolioTradesRepository,
+    private readonly historyRepository?: PortfolioHistoryRepository,
   ) {}
 
   async getPositions(query: GetPortfolioPositionsQueryDto): Promise<{
@@ -140,6 +143,21 @@ export class PortfolioService {
         total_count: 0,
         total_pages: 0,
       };
+    }
+  }
+
+  async getHistory(
+    userId: string,
+    period: HistoryPeriod,
+  ): Promise<BalanceSnapshot[]> {
+    if (!this.historyRepository) {
+      return [];
+    }
+
+    try {
+      return await this.historyRepository.findByUserId(userId, period);
+    } catch {
+      return [];
     }
   }
 
