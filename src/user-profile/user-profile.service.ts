@@ -11,12 +11,14 @@ export class UserProfileService {
   constructor(private readonly userProfileRepository: UserProfileRepository) {}
 
   async onAuth(
-    walletAddress: string,
+    userId: string,
     username?: string,
+    walletAddress?: string,
   ): Promise<UserSessionResponse> {
     const profile = await this.userProfileRepository.ensureOnAuth(
-      walletAddress,
+      userId,
       username,
+      walletAddress,
     );
     return this.toSessionResponse(
       profile.onboarding_complete,
@@ -25,12 +27,12 @@ export class UserProfileService {
   }
 
   async updateOnboardingStep(
-    walletAddress: string,
+    userId: string,
     step: OnboardingStep,
     username?: string,
   ): Promise<UserSessionResponse> {
     const profile = await this.userProfileRepository.updateOnboardingStep(
-      walletAddress,
+      userId,
       step,
       username,
     );
@@ -40,9 +42,8 @@ export class UserProfileService {
     );
   }
 
-  async getSession(walletAddress: string): Promise<UserSessionResponse> {
-    const profile =
-      await this.userProfileRepository.findByWalletAddress(walletAddress);
+  async getSession(userId: string): Promise<UserSessionResponse> {
+    const profile = await this.userProfileRepository.findByUserId(userId);
     if (!profile) {
       return this.toSessionResponse(false, 'auth');
     }

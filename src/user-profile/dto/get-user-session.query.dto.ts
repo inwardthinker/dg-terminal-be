@@ -1,6 +1,6 @@
-import { Matches } from 'class-validator';
+import { IsString } from 'class-validator';
 
 export class GetUserSessionQueryDto {
-  @Matches(/^0x[a-fA-F0-9]{40}$/)
-  walletAddress!: string;
+  @IsString()
+  userId!: string;
 }

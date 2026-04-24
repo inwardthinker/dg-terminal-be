@@ -10,13 +10,17 @@ export class UserProfileController {
 
   @Post('onboarding/auth')
   onAuth(@Body() body: OnboardingAuthBodyDto) {
-    return this.userProfileService.onAuth(body.walletAddress, body.username);
+    return this.userProfileService.onAuth(
+      body.userId,
+      body.username,
+      body.walletAddress,
+    );
   }
 
   @Patch('onboarding/step')
   updateOnboardingStep(@Body() body: UpdateOnboardingStepBodyDto) {
     return this.userProfileService.updateOnboardingStep(
-      body.walletAddress,
+      body.userId,
       body.step,
       body.username,
     );
@@ -24,6 +28,6 @@ export class UserProfileController {
 
   @Get('session')
   getSession(@Query() query: GetUserSessionQueryDto) {
-    return this.userProfileService.getSession(query.walletAddress);
+    return this.userProfileService.getSession(query.userId);
   }
 }

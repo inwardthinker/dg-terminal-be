@@ -1,8 +1,9 @@
 import { OnboardingStep } from './onboarding-step.type';
 
 export type UserProfile = {
-  wallet_address: string;
+  user_id: string;
   username: string | null;
+  wallet_address: string | null;
   onboarding_complete: boolean;
   last_onboarding_step: OnboardingStep;
   created_at: string;

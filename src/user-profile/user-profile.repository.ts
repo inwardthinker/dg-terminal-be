@@ -12,32 +12,35 @@ export class UserProfileRepository {
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
   async ensureOnAuth(
-    walletAddress: string,
+    userId: string,
     username?: string,
+    walletAddress?: string,
   ): Promise<UserProfile> {
     const { rows } = await this.pool.query<UserProfile>(
       `
         INSERT INTO ${USER_PROFILE_TABLE} (
-          wallet_address,
+          user_id,
           username,
+          wallet_address,
           onboarding_complete,
           last_onboarding_step
         )
-        VALUES ($1, $2, FALSE, 'auth')
-        ON CONFLICT (wallet_address)
+        VALUES ($1, $2, $3, FALSE, 'auth')
+        ON CONFLICT (user_id)
         DO UPDATE SET
           username = COALESCE(EXCLUDED.username, ${USER_PROFILE_TABLE}.username),
+          wallet_address = COALESCE(EXCLUDED.wallet_address, ${USER_PROFILE_TABLE}.wallet_address),
           updated_at = NOW()
         RETURNING *
       `,
-      [walletAddress, username ?? null],
+      [userId, username ?? null, walletAddress ?? null],
     );
 
     return rows[0];
   }
 
   async updateOnboardingStep(
-    walletAddress: string,
+    userId: string,
     step: OnboardingStep,
     username?: string,
   ): Promise<UserProfile> {
@@ -45,13 +48,13 @@ export class UserProfileRepository {
     const { rows } = await this.pool.query<UserProfile>(
       `
         INSERT INTO ${USER_PROFILE_TABLE} (
-          wallet_address,
+          user_id,
           username,
           onboarding_complete,
           last_onboarding_step
         )
         VALUES ($1, $2, $3, $4)
-        ON CONFLICT (wallet_address)
+        ON CONFLICT (user_id)
         DO UPDATE SET
           onboarding_complete = EXCLUDED.onboarding_complete,
           last_onboarding_step = EXCLUDED.last_onboarding_step,
@@ -59,28 +62,27 @@ export class UserProfileRepository {
           updated_at = NOW()
         RETURNING *
       `,
-      [walletAddress, username ?? null, onboardingComplete, step],
+      [userId, username ?? null, onboardingComplete, step],
     );
 
     return rows[0];
   }
 
-  async findByWalletAddress(
-    walletAddress: string,
-  ): Promise<UserProfile | null> {
+  async findByUserId(userId: string): Promise<UserProfile | null> {
     const { rows } = await this.pool.query<UserProfile>(
       `
         SELECT
-          wallet_address,
+          user_id,
           username,
+          wallet_address,
           onboarding_complete,
           last_onboarding_step,
           created_at,
           updated_at
         FROM ${USER_PROFILE_TABLE}
-        WHERE wallet_address = $1
+        WHERE user_id = $1
       `,
-      [walletAddress],
+      [userId],
     );
 
     return rows[0] ?? null;
