@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "dg-terminal-be",
-    "description": "Staging API tests for dg-terminal-be (NestJS).\n\n**Auth:** Portfolio routes require a non-empty `Authorization` header (value is not validated — use any Bearer token for local dev).\n\n**Wallet:** Set the `wallet` collection variable to a valid EVM address (`0x` + 40 hex chars).",
+    "description": "API tests for dg-terminal-be (NestJS).\n\n**Auth:** Portfolio routes require a non-empty `Authorization` header (value is not validated — use any Bearer token for local dev).\n\n**Wallet:** Set the `wallet` collection variable to a valid EVM address (`0x` + 40 hex chars).\n\n**User profile:** Onboarding/session routes live under `/api/user-profile` and do not require `Authorization`. Rows are keyed by `walletAddress` in table `DGTerminal_UserProfile`. Use the `wallet` variable (and optionally `onboardingUsername`) for those requests. Use `baseUrl` `http://localhost:3000` for local runs.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -30,6 +30,10 @@
     {
       "key": "authorization",
       "value": "Bearer dev-token"
+    },
+    {
+      "key": "onboardingUsername",
+      "value": "dev_trader"
     }
   ],
   "item": [
@@ -49,6 +53,177 @@
             ],
             "url": "{{baseUrl}}/",
             "description": "Root handler — returns plain text from `AppService`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User profile",
+      "item": [
+        {
+          "name": "POST onboarding/auth (walletAddress only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"walletAddress\": \"{{wallet}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user-profile/onboarding/auth",
+            "description": "Ensures a row in `DGTerminal_UserProfile` keyed by `walletAddress`: `onboarding_complete=false`, `last_onboarding_step=auth`. No auth header required."
+          },
+          "response": []
+        },
+        {
+          "name": "POST onboarding/auth (+ username)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"walletAddress\": \"{{wallet}}\",\n  \"username\": \"{{onboardingUsername}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user-profile/onboarding/auth",
+            "description": "Same as wallet-only auth, plus optional `username`."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH onboarding/step → identity (+ username)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"walletAddress\": \"{{wallet}}\",\n  \"step\": \"identity\",\n  \"username\": \"{{onboardingUsername}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user-profile/onboarding/step",
+            "description": "Advances onboarding to Step 1 (`#step=identity`). Persists `username` when sent."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH onboarding/step → calibrate",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"walletAddress\": \"{{wallet}}\",\n  \"step\": \"calibrate\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user-profile/onboarding/step",
+            "description": "Step 2 — interests (`#step=calibrate`). Optional `username` in body if you need to update it again."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH onboarding/step → done",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"walletAddress\": \"{{wallet}}\",\n  \"step\": \"done\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user-profile/onboarding/step",
+            "description": "Completes onboarding: `onboarding_complete=true`, `last_onboarding_step=done`, `onboarding_hash` null in session payload."
+          },
+          "response": []
+        },
+        {
+          "name": "GET session (restore)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/user-profile/session?walletAddress={{wallet}}",
+            "description": "Returns `{ onboarding_complete, last_onboarding_step, onboarding_hash }` for modal resume. Unknown `walletAddress` behaves as not started (`auth`, incomplete)."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH onboarding/step — 400 (invalid step)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"walletAddress\": \"{{wallet}}\",\n  \"step\": \"not-a-step\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user-profile/onboarding/step",
+            "description": "Expect **400** — `step` must be one of: auth, identity, calibrate, done."
           },
           "response": []
         }
