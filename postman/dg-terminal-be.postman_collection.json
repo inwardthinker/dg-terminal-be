@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "dg-terminal-be",
-    "description": "API tests for dg-terminal-be (NestJS).\n\n**Auth:** Portfolio routes require a non-empty `Authorization` header (value is not validated — use any Bearer token for local dev).\n\n**Wallet:** Set the `wallet` collection variable to a valid EVM address (`0x` + 40 hex chars).\n\n**User profile:** Onboarding/session routes live under `/api/user-profile` and do not require `Authorization`. Rows are keyed by `walletAddress` in table `DGTerminal_UserProfile`. Use the `wallet` variable (and optionally `onboardingUsername`) for those requests. Use `baseUrl` `http://localhost:3000` for local runs.",
+    "description": "API tests for dg-terminal-be (NestJS).\n\n**Auth:** Portfolio routes require a non-empty `Authorization` header (value is not validated — use any Bearer token for local dev).\n\n**Wallet:** Set the `wallet` collection variable to a valid EVM address (`0x` + 40 hex chars).\n\n**User profile:** Onboarding/session routes live under `/api/user-profile` and do not require `Authorization`. Data is stored in Postgres table `DGTerminal_UserProfile`. Set `userId` (and optionally `onboardingUsername`) for those requests. Use `baseUrl` `http://localhost:3000` for local runs.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -30,6 +30,10 @@
     {
       "key": "authorization",
       "value": "Bearer dev-token"
+    },
+    {
+      "key": "userId",
+      "value": "dev-user-1"
     },
     {
       "key": "onboardingUsername",
@@ -62,7 +66,7 @@
       "name": "User profile",
       "item": [
         {
-          "name": "POST onboarding/auth (walletAddress only)",
+          "name": "POST onboarding/auth (userId only)",
           "request": {
             "method": "POST",
             "header": [
@@ -79,15 +83,15 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"walletAddress\": \"{{wallet}}\"\n}"
+              "raw": "{\n  \"userId\": \"{{userId}}\"\n}"
             },
             "url": "{{baseUrl}}/api/user-profile/onboarding/auth",
-            "description": "Ensures a row in `DGTerminal_UserProfile` keyed by `walletAddress`: `onboarding_complete=false`, `last_onboarding_step=auth`. No auth header required."
+            "description": "Ensures a row in `DGTerminal_UserProfile`: `onboarding_complete=false`, `last_onboarding_step=auth`. No auth header required."
           },
           "response": []
         },
         {
-          "name": "POST onboarding/auth (+ username)",
+          "name": "POST onboarding/auth (+ username + walletAddress)",
           "request": {
             "method": "POST",
             "header": [
@@ -104,10 +108,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"walletAddress\": \"{{wallet}}\",\n  \"username\": \"{{onboardingUsername}}\"\n}"
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"username\": \"{{onboardingUsername}}\",\n  \"walletAddress\": \"{{wallet}}\"\n}"
             },
             "url": "{{baseUrl}}/api/user-profile/onboarding/auth",
-            "description": "Same as wallet-only auth, plus optional `username`."
+            "description": "Same as minimal auth, plus optional `username` and `walletAddress` (must match `^0x[a-fA-F0-9]{40}$` when present)."
           },
           "response": []
         },
@@ -129,7 +133,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"walletAddress\": \"{{wallet}}\",\n  \"step\": \"identity\",\n  \"username\": \"{{onboardingUsername}}\"\n}"
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"step\": \"identity\",\n  \"username\": \"{{onboardingUsername}}\"\n}"
             },
             "url": "{{baseUrl}}/api/user-profile/onboarding/step",
             "description": "Advances onboarding to Step 1 (`#step=identity`). Persists `username` when sent."
@@ -154,7 +158,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"walletAddress\": \"{{wallet}}\",\n  \"step\": \"calibrate\"\n}"
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"step\": \"calibrate\"\n}"
             },
             "url": "{{baseUrl}}/api/user-profile/onboarding/step",
             "description": "Step 2 — interests (`#step=calibrate`). Optional `username` in body if you need to update it again."
@@ -179,7 +183,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"walletAddress\": \"{{wallet}}\",\n  \"step\": \"done\"\n}"
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"step\": \"done\"\n}"
             },
             "url": "{{baseUrl}}/api/user-profile/onboarding/step",
             "description": "Completes onboarding: `onboarding_complete=true`, `last_onboarding_step=done`, `onboarding_hash` null in session payload."
@@ -197,8 +201,8 @@
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/api/user-profile/session?walletAddress={{wallet}}",
-            "description": "Returns `{ onboarding_complete, last_onboarding_step, onboarding_hash }` for modal resume. Unknown `walletAddress` behaves as not started (`auth`, incomplete)."
+            "url": "{{baseUrl}}/api/user-profile/session?userId={{userId}}",
+            "description": "Returns `{ onboarding_complete, last_onboarding_step, onboarding_hash }` for modal resume. Unknown `userId` behaves as not started (`auth`, incomplete)."
           },
           "response": []
         },
@@ -220,7 +224,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"walletAddress\": \"{{wallet}}\",\n  \"step\": \"not-a-step\"\n}"
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"step\": \"not-a-step\"\n}"
             },
             "url": "{{baseUrl}}/api/user-profile/onboarding/step",
             "description": "Expect **400** — `step` must be one of: auth, identity, calibrate, done."
