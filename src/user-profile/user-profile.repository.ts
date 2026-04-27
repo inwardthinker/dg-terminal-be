@@ -11,6 +11,22 @@ const USER_PROFILE_TABLE = '"DGTerminal_UserProfile"';
 export class UserProfileRepository {
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
+  async findLegacyUserByEmail(
+    email: string,
+  ): Promise<{ username: string | null } | null> {
+    const { rows } = await this.pool.query<{ username: string | null }>(
+      `
+        SELECT username
+        FROM users
+        WHERE LOWER(email) = LOWER($1)
+        LIMIT 1
+      `,
+      [email],
+    );
+
+    return rows[0] ?? null;
+  }
+
   async ensureOnAuth(
     userId: string,
     username?: string,

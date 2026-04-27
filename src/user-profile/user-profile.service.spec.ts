@@ -6,7 +6,10 @@ describe('UserProfileService', () => {
   let repo: jest.Mocked<
     Pick<
       UserProfileRepository,
-      'ensureOnAuth' | 'updateOnboardingStep' | 'findByUserId'
+      | 'ensureOnAuth'
+      | 'updateOnboardingStep'
+      | 'findByUserId'
+      | 'findLegacyUserByEmail'
     >
   >;
 
@@ -15,6 +18,7 @@ describe('UserProfileService', () => {
       ensureOnAuth: jest.fn(),
       updateOnboardingStep: jest.fn(),
       findByUserId: jest.fn(),
+      findLegacyUserByEmail: jest.fn(),
     };
     service = new UserProfileService(repo as unknown as UserProfileRepository);
   });
@@ -34,6 +38,8 @@ describe('UserProfileService', () => {
       onboarding_complete: false,
       last_onboarding_step: 'identity',
       onboarding_hash: '#step=identity',
+      existing_user: false,
+      legacy_username: null,
     });
   });
 
@@ -52,6 +58,8 @@ describe('UserProfileService', () => {
       onboarding_complete: true,
       last_onboarding_step: 'done',
       onboarding_hash: null,
+      existing_user: false,
+      legacy_username: null,
     });
   });
 
@@ -62,6 +70,77 @@ describe('UserProfileService', () => {
       onboarding_complete: false,
       last_onboarding_step: 'auth',
       onboarding_hash: '#step=auth',
+      existing_user: false,
+      legacy_username: null,
     });
+  });
+
+  it('returns existing user flag and legacy username on email match', async () => {
+    repo.ensureOnAuth.mockResolvedValue({
+      user_id: 'u1',
+      username: 'alice',
+      wallet_address: null,
+      onboarding_complete: false,
+      last_onboarding_step: 'auth',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    repo.findLegacyUserByEmail.mockResolvedValue({
+      username: 'legacy-alice',
+    });
+
+    await expect(
+      service.onAuth('u1', 'alice', '0x' + 'a'.repeat(40), 'alice@example.com'),
+    ).resolves.toEqual({
+      onboarding_complete: false,
+      last_onboarding_step: 'auth',
+      onboarding_hash: '#step=auth',
+      existing_user: true,
+      legacy_username: 'legacy-alice',
+    });
+  });
+
+  it('defaults to new user when lookup fails', async () => {
+    repo.ensureOnAuth.mockResolvedValue({
+      user_id: 'u1',
+      username: 'alice',
+      wallet_address: null,
+      onboarding_complete: false,
+      last_onboarding_step: 'auth',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    repo.findLegacyUserByEmail.mockRejectedValue(new Error('db unavailable'));
+
+    await expect(
+      service.onAuth('u1', 'alice', undefined, 'alice@example.com'),
+    ).resolves.toEqual({
+      onboarding_complete: false,
+      last_onboarding_step: 'auth',
+      onboarding_hash: '#step=auth',
+      existing_user: false,
+      legacy_username: null,
+    });
+  });
+
+  it('treats missing email as new user', async () => {
+    repo.ensureOnAuth.mockResolvedValue({
+      user_id: 'u1',
+      username: 'alice',
+      wallet_address: null,
+      onboarding_complete: false,
+      last_onboarding_step: 'auth',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    await expect(service.onAuth('u1', 'alice')).resolves.toEqual({
+      onboarding_complete: false,
+      last_onboarding_step: 'auth',
+      onboarding_hash: '#step=auth',
+      existing_user: false,
+      legacy_username: null,
+    });
+    expect(repo.findLegacyUserByEmail).not.toHaveBeenCalled();
   });
 });

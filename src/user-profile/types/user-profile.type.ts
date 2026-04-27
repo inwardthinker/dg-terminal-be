@@ -14,4 +14,6 @@ export type UserSessionResponse = {
   onboarding_complete: boolean;
   last_onboarding_step: OnboardingStep;
   onboarding_hash: string | null;
+  existing_user: boolean;
+  legacy_username: string | null;
 };

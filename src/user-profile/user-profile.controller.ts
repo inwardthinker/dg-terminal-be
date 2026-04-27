@@ -14,6 +14,7 @@ export class UserProfileController {
       body.userId,
       body.username,
       body.walletAddress,
+      body.email,
     );
   }
 

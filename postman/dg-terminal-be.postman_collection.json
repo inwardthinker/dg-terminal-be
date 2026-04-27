@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "dg-terminal-be",
-    "description": "API tests for dg-terminal-be (NestJS).\n\n**Auth:** Portfolio routes require a non-empty `Authorization` header (value is not validated — use any Bearer token for local dev).\n\n**Wallet:** Set the `wallet` collection variable to a valid EVM address (`0x` + 40 hex chars).\n\n**User profile:** Onboarding/session routes live under `/api/user-profile` and do not require `Authorization`. Data is stored in Postgres table `DGTerminal_UserProfile`. Set `userId` (and optionally `onboardingUsername`) for those requests. Use `baseUrl` `http://localhost:3000` for local runs.",
+    "description": "API tests for dg-terminal-be (NestJS).\n\n**Auth:** Portfolio routes require a non-empty `Authorization` header (value is not validated — use any Bearer token for local dev).\n\n**Wallet:** Set the `wallet` collection variable to a valid EVM address (`0x` + 40 hex chars).\n\n**User profile:** Onboarding/session routes live under `/api/user-profile` and do not require `Authorization`. Data is stored in Postgres table `DGTerminal_UserProfile`. Set `userId` (and optionally `onboardingUsername` / `onboardingEmail`) for those requests. On `POST /onboarding/auth`, pass OAuth email in `email` to get `existing_user` + `legacy_username` in response. Use `baseUrl` `http://localhost:3000` for local runs.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -38,6 +38,10 @@
     {
       "key": "onboardingUsername",
       "value": "dev_trader"
+    },
+    {
+      "key": "onboardingEmail",
+      "value": "dev.user@example.com"
     }
   ],
   "item": [
@@ -66,7 +70,7 @@
       "name": "User profile",
       "item": [
         {
-          "name": "POST onboarding/auth (userId only)",
+          "name": "POST onboarding/auth (new user path)",
           "request": {
             "method": "POST",
             "header": [
@@ -86,12 +90,12 @@
               "raw": "{\n  \"userId\": \"{{userId}}\"\n}"
             },
             "url": "{{baseUrl}}/api/user-profile/onboarding/auth",
-            "description": "Ensures a row in `DGTerminal_UserProfile`: `onboarding_complete=false`, `last_onboarding_step=auth`. No auth header required."
+            "description": "Ensures a row in `DGTerminal_UserProfile`: `onboarding_complete=false`, `last_onboarding_step=auth`. No auth header required. Without `email`, response defaults to `existing_user=false` and `legacy_username=null`."
           },
           "response": []
         },
         {
-          "name": "POST onboarding/auth (+ username + walletAddress)",
+          "name": "POST onboarding/auth (+ username + walletAddress + email)",
           "request": {
             "method": "POST",
             "header": [
@@ -108,10 +112,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"username\": \"{{onboardingUsername}}\",\n  \"walletAddress\": \"{{wallet}}\"\n}"
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"username\": \"{{onboardingUsername}}\",\n  \"walletAddress\": \"{{wallet}}\",\n  \"email\": \"{{onboardingEmail}}\"\n}"
             },
             "url": "{{baseUrl}}/api/user-profile/onboarding/auth",
-            "description": "Same as minimal auth, plus optional `username` and `walletAddress` (must match `^0x[a-fA-F0-9]{40}$` when present)."
+            "description": "Same as minimal auth, plus optional `username`, `walletAddress` (must match `^0x[a-fA-F0-9]{40}$` when present), and `email` (OAuth email). Response shape: `{ onboarding_complete, last_onboarding_step, onboarding_hash, existing_user, legacy_username }`."
           },
           "response": []
         },
@@ -202,7 +206,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/user-profile/session?userId={{userId}}",
-            "description": "Returns `{ onboarding_complete, last_onboarding_step, onboarding_hash }` for modal resume. Unknown `userId` behaves as not started (`auth`, incomplete)."
+            "description": "Returns `{ onboarding_complete, last_onboarding_step, onboarding_hash, existing_user, legacy_username }` for modal resume. `existing_user` and `legacy_username` are session-level defaults in this endpoint (auth completion endpoint is where email matching occurs). Unknown `userId` behaves as not started (`auth`, incomplete)."
           },
           "response": []
         },
