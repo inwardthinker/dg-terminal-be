@@ -5,7 +5,7 @@ import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
 import { PortfolioModule } from './portfolio/portfolio.module';
 import { PositionsModule } from './positions/positions.module';
-import { UserProfileModule } from './user-profile/user-profile.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -13,7 +13,7 @@ import { UserProfileModule } from './user-profile/user-profile.module';
     DatabaseModule,
     PortfolioModule,
     PositionsModule,
-    UserProfileModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

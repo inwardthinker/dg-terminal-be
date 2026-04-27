@@ -2,15 +2,15 @@ import { Body, Controller, Get, Patch, Post, Query } from '@nestjs/common';
 import { GetUserSessionQueryDto } from './dto/get-user-session.query.dto';
 import { OnboardingAuthBodyDto } from './dto/onboarding-auth.body.dto';
 import { UpdateOnboardingStepBodyDto } from './dto/update-onboarding-step.body.dto';
-import { UserProfileService } from './user-profile.service';
+import { UsersService } from './users.service';
 
-@Controller('api/user-profile')
-export class UserProfileController {
-  constructor(private readonly userProfileService: UserProfileService) {}
+@Controller('api/users')
+export class UsersController {
+  constructor(private readonly usersService: UsersService) {}
 
   @Post('onboarding/auth')
   onAuth(@Body() body: OnboardingAuthBodyDto) {
-    return this.userProfileService.onAuth(
+    return this.usersService.onAuth(
       body.userId,
       body.username,
       body.walletAddress,
@@ -20,7 +20,7 @@ export class UserProfileController {
 
   @Patch('onboarding/step')
   updateOnboardingStep(@Body() body: UpdateOnboardingStepBodyDto) {
-    return this.userProfileService.updateOnboardingStep(
+    return this.usersService.updateOnboardingStep(
       body.userId,
       body.step,
       body.username,
@@ -29,6 +29,6 @@ export class UserProfileController {
 
   @Get('session')
   getSession(@Query() query: GetUserSessionQueryDto) {
-    return this.userProfileService.getSession(query.userId);
+    return this.usersService.getSession(query.userId);
   }
 }

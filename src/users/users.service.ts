@@ -3,20 +3,20 @@ import {
   ONBOARDING_STEP_HASH_MAP,
   OnboardingStep,
 } from './types/onboarding-step.type';
-import { UserSessionResponse } from './types/user-profile.type';
-import { UserProfileRepository } from './user-profile.repository';
+import { UsersSessionResponse } from './types/users.type';
+import { UsersRepository } from './users.repository';
 
 @Injectable()
-export class UserProfileService {
-  constructor(private readonly userProfileRepository: UserProfileRepository) {}
+export class UsersService {
+  constructor(private readonly usersRepository: UsersRepository) {}
 
   async onAuth(
     userId: string,
     username?: string,
     walletAddress?: string,
     email?: string,
-  ): Promise<UserSessionResponse> {
-    const profile = await this.userProfileRepository.ensureOnAuth(
+  ): Promise<UsersSessionResponse> {
+    const user = await this.usersRepository.ensureOnAuth(
       userId,
       username,
       walletAddress,
@@ -24,10 +24,11 @@ export class UserProfileService {
     const existingUser = await this.resolveExistingUserByEmail(email);
 
     return this.toSessionResponse(
-      profile.onboarding_complete,
-      profile.last_onboarding_step,
+      user?.onboarding_complete ?? false,
+      user?.last_onboarding_step ?? 'auth',
       existingUser.exists,
       existingUser.legacyUsername,
+      user,
     );
   }
 
@@ -35,31 +36,33 @@ export class UserProfileService {
     userId: string,
     step: OnboardingStep,
     username?: string,
-  ): Promise<UserSessionResponse> {
-    const profile = await this.userProfileRepository.updateOnboardingStep(
+  ): Promise<UsersSessionResponse> {
+    const user = await this.usersRepository.updateOnboardingStep(
       userId,
       step,
       username,
     );
     return this.toSessionResponse(
-      profile.onboarding_complete,
-      profile.last_onboarding_step,
+      user?.onboarding_complete ?? false,
+      user?.last_onboarding_step ?? 'auth',
       false,
       null,
+      user,
     );
   }
 
-  async getSession(userId: string): Promise<UserSessionResponse> {
-    const profile = await this.userProfileRepository.findByUserId(userId);
-    if (!profile) {
-      return this.toSessionResponse(false, 'auth', false, null);
+  async getSession(userId: string): Promise<UsersSessionResponse> {
+    const user = await this.usersRepository.findByUserId(userId);
+    if (!user) {
+      return this.toSessionResponse(false, 'auth', false, null, null);
     }
 
     return this.toSessionResponse(
-      profile.onboarding_complete,
-      profile.last_onboarding_step,
+      user.onboarding_complete,
+      user.last_onboarding_step,
       false,
       null,
+      user,
     );
   }
 
@@ -68,7 +71,8 @@ export class UserProfileService {
     step: OnboardingStep,
     existingUser: boolean,
     legacyUsername: string | null,
-  ): UserSessionResponse {
+    user: UsersSessionResponse['user'],
+  ): UsersSessionResponse {
     return {
       onboarding_complete: onboardingComplete,
       last_onboarding_step: step,
@@ -77,6 +81,7 @@ export class UserProfileService {
         : ONBOARDING_STEP_HASH_MAP[step],
       existing_user: existingUser,
       legacy_username: legacyUsername,
+      user,
     };
   }
 
@@ -89,7 +94,7 @@ export class UserProfileService {
 
     try {
       const legacyUser =
-        await this.userProfileRepository.findLegacyUserByEmail(email);
+        await this.usersRepository.findLegacyUserByEmail(email);
       return {
         exists: !!legacyUser,
         legacyUsername: legacyUser?.username ?? null,
