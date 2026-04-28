@@ -3,9 +3,6 @@ import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ONBOARDING_STEPS } from '../types/onboarding-step.type';
 
 export class UpdateOnboardingStepBodyDto {
-  @IsString()
-  userId!: string;
-
   @IsIn(ONBOARDING_STEPS)
   step!: (typeof ONBOARDING_STEPS)[number];
 

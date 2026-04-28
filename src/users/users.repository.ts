@@ -4,21 +4,25 @@ import { PG_POOL } from '../database/database.constants';
 import { OnboardingStep } from './types/onboarding-step.type';
 import { UserRecord } from './types/users.type';
 
+const USERS_TABLE = 'public."DG3_user"';
+
 @Injectable()
 export class UsersRepository {
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
   async findLegacyUserByEmail(
     email: string,
+    excludeUserId?: string,
   ): Promise<{ username: string | null } | null> {
     const { rows } = await this.pool.query<{ username: string | null }>(
       `
         SELECT username
-        FROM users
+        FROM ${USERS_TABLE}
         WHERE LOWER(email) = LOWER($1)
+          AND ($2::text IS NULL OR user_id IS DISTINCT FROM $2)
         LIMIT 1
       `,
-      [email],
+      [email, excludeUserId ?? null],
     );
 
     return rows[0] ?? null;
@@ -26,25 +30,50 @@ export class UsersRepository {
 
   async ensureOnAuth(
     userId: string,
+    email?: string | null,
     username?: string,
     walletAddress?: string,
   ): Promise<UserRecord | null> {
     const { rows } = await this.pool.query<UserRecord>(
       `
         WITH updated AS (
-          UPDATE users
+          UPDATE ${USERS_TABLE}
           SET
-            username = COALESCE($2, username),
-            safe_wallet_address = COALESCE($3, safe_wallet_address),
+            email = COALESCE($2, email),
+            username = COALESCE($3, username),
+            wallet_address = COALESCE(NULLIF($4, ''), wallet_address),
             onboarding_complete = COALESCE(onboarding_complete, FALSE),
             last_onboarding_step = COALESCE(last_onboarding_step, 'auth'),
             updated_at = NOW()
-          WHERE id = $1
+          WHERE user_id = $1
+          RETURNING *
+        ),
+        inserted AS (
+          INSERT INTO ${USERS_TABLE} (
+            user_id,
+            email,
+            username,
+            wallet_address,
+            onboarding_complete,
+            last_onboarding_step,
+            updated_at
+          )
+          SELECT
+            $1,
+            $2,
+            $3,
+            $4,
+            FALSE,
+            'auth',
+            NOW()
+          WHERE NOT EXISTS (SELECT 1 FROM updated)
           RETURNING *
         )
         SELECT * FROM updated
+        UNION ALL
+        SELECT * FROM inserted
       `,
-      [userId, username ?? null, walletAddress ?? null],
+      [userId, email ?? null, username ?? null, walletAddress ?? ''],
     );
 
     return rows[0] ?? null;
@@ -58,17 +87,14 @@ export class UsersRepository {
     const onboardingComplete = step === 'done';
     const { rows } = await this.pool.query<UserRecord>(
       `
-        WITH updated AS (
-          UPDATE users
-          SET
-            onboarding_complete = $2,
-            last_onboarding_step = $3,
-            username = COALESCE($4, username),
-            updated_at = NOW()
-          WHERE id = $1
-          RETURNING *
-        )
-        SELECT * FROM updated
+        UPDATE ${USERS_TABLE}
+        SET
+          onboarding_complete = $2,
+          last_onboarding_step = $3,
+          username = COALESCE($4, username),
+          updated_at = NOW()
+        WHERE user_id = $1
+        RETURNING *
       `,
       [userId, onboardingComplete, step, username ?? null],
     );
@@ -80,8 +106,8 @@ export class UsersRepository {
     const { rows } = await this.pool.query<UserRecord>(
       `
         SELECT *
-        FROM users
-        WHERE id = $1
+        FROM ${USERS_TABLE}
+        WHERE user_id = $1
       `,
       [userId],
     );

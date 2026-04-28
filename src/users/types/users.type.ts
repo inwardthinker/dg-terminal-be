@@ -2,9 +2,10 @@ import { OnboardingStep } from './onboarding-step.type';
 
 export type UserRecord = {
   id: string;
+  user_id: string | null;
   email: string | null;
   username: string | null;
-  safe_wallet_address: string | null;
+  wallet_address: string;
   onboarding_complete: boolean;
   last_onboarding_step: OnboardingStep;
   created_at: string;

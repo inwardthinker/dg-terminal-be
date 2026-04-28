@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "dg-terminal-be",
-    "description": "API tests for dg-terminal-be (NestJS).\n\n**Auth:** Portfolio routes require a non-empty `Authorization` header (value is not validated — use any Bearer token for local dev).\n\n**Wallet:** Set the `wallet` collection variable to a valid EVM address (`0x` + 40 hex chars).\n\n**Users:** Onboarding/session routes live under `/api/users` and do not require `Authorization`. Data is stored on the `users` table. Set `userId` (and optionally `onboardingUsername` / `onboardingEmail`) for those requests. On `POST /onboarding/auth`, pass OAuth email in `email` to get `existing_user` + `legacy_username` in response. Use `baseUrl` `http://localhost:3000` for local runs.",
+    "description": "API tests for dg-terminal-be (NestJS).\n\n**Auth:** Portfolio routes require a non-empty `Authorization` header (value is not validated — use any Bearer token for local dev).\n\n**Wallet:** Set the `wallet` collection variable to a valid EVM address (`0x` + 40 hex chars).\n\n**Users:** Onboarding/session routes live under `/api/users` and do not require `Authorization`. Data is stored in `public.\"DG3_user\"`. Frontend sends Privy identity token in cookie (`privy-id-token`) or header (`privy-id-token`), and backend derives the user from token claims. You can still optionally pass `onboardingUsername` / `onboardingEmail` for local testing overrides on onboarding auth. Use `baseUrl` `http://localhost:3000` for local runs.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -32,16 +32,16 @@
       "value": "Bearer dev-token"
     },
     {
-      "key": "userId",
-      "value": "dev-user-1"
-    },
-    {
       "key": "onboardingUsername",
       "value": "dev_trader"
     },
     {
       "key": "onboardingEmail",
       "value": "dev.user@example.com"
+    },
+    {
+      "key": "privyIdToken",
+      "value": ""
     }
   ],
   "item": [
@@ -67,16 +67,21 @@
       ]
     },
     {
-      "name": "User profile",
+      "name": "Users",
       "item": [
         {
-          "name": "POST onboarding/auth (new user path)",
+          "name": "POST onboarding/auth (new user path, token in cookie)",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
                 "type": "text"
               },
               {
@@ -87,21 +92,26 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": \"{{userId}}\"\n}"
+              "raw": "{}"
             },
             "url": "{{baseUrl}}/api/users/onboarding/auth",
-            "description": "Ensures a row in `DGTerminal_UserProfile`: `onboarding_complete=false`, `last_onboarding_step=auth`. No auth header required. Without `email`, response defaults to `existing_user=false` and `legacy_username=null`."
+            "description": "Upserts user from Privy identity token (`privy-id-token`) and sets onboarding defaults. Without email claim/match, response defaults to `existing_user=false` and `legacy_username=null`."
           },
           "response": []
         },
         {
-          "name": "POST onboarding/auth (+ username + walletAddress + email)",
+          "name": "POST onboarding/auth (+ optional overrides)",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
                 "type": "text"
               },
               {
@@ -112,10 +122,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"username\": \"{{onboardingUsername}}\",\n  \"walletAddress\": \"{{wallet}}\",\n  \"email\": \"{{onboardingEmail}}\"\n}"
+              "raw": "{\n  \"username\": \"{{onboardingUsername}}\",\n  \"email\": \"{{onboardingEmail}}\"\n}"
             },
             "url": "{{baseUrl}}/api/users/onboarding/auth",
-            "description": "Same as minimal auth, plus optional `username`, `walletAddress` (must match `^0x[a-fA-F0-9]{40}$` when present), and `email` (OAuth email). Response shape: `{ onboarding_complete, last_onboarding_step, onboarding_hash, existing_user, legacy_username, user }` where `user` is the full row from `users`."
+            "description": "Same as minimal auth, plus optional payload overrides for `username` and `email`. `wallet_address` always comes from the Privy token linked accounts."
           },
           "response": []
         },
@@ -130,6 +140,11 @@
                 "type": "text"
               },
               {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
                 "key": "Accept",
                 "value": "application/json",
                 "type": "text"
@@ -137,7 +152,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"step\": \"identity\",\n  \"username\": \"{{onboardingUsername}}\"\n}"
+              "raw": "{\n  \"step\": \"identity\",\n  \"username\": \"{{onboardingUsername}}\"\n}"
             },
             "url": "{{baseUrl}}/api/users/onboarding/step",
             "description": "Advances onboarding to Step 1 (`#step=identity`). Persists `username` when sent."
@@ -155,6 +170,11 @@
                 "type": "text"
               },
               {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
                 "key": "Accept",
                 "value": "application/json",
                 "type": "text"
@@ -162,7 +182,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"step\": \"calibrate\"\n}"
+              "raw": "{\n  \"step\": \"calibrate\"\n}"
             },
             "url": "{{baseUrl}}/api/users/onboarding/step",
             "description": "Step 2 — interests (`#step=calibrate`). Optional `username` in body if you need to update it again."
@@ -180,6 +200,11 @@
                 "type": "text"
               },
               {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
                 "key": "Accept",
                 "value": "application/json",
                 "type": "text"
@@ -187,7 +212,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"step\": \"done\"\n}"
+              "raw": "{\n  \"step\": \"done\"\n}"
             },
             "url": "{{baseUrl}}/api/users/onboarding/step",
             "description": "Completes onboarding: `onboarding_complete=true`, `last_onboarding_step=done`, `onboarding_hash` null in session payload."
@@ -200,13 +225,18 @@
             "method": "GET",
             "header": [
               {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
                 "key": "Accept",
                 "value": "application/json",
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/api/users/session?userId={{userId}}",
-            "description": "Returns `{ onboarding_complete, last_onboarding_step, onboarding_hash, existing_user, legacy_username, user }` for modal resume. `existing_user` and `legacy_username` are session-level defaults in this endpoint (auth completion endpoint is where email matching occurs). `user` contains full `users` row when found, otherwise null."
+            "url": "{{baseUrl}}/api/users/session",
+            "description": "Returns `{ onboarding_complete, last_onboarding_step, onboarding_hash, existing_user, legacy_username, user }` for the authenticated Privy user from cookie/header token. `user` contains full `users` row when found, otherwise null."
           },
           "response": []
         },
@@ -221,6 +251,11 @@
                 "type": "text"
               },
               {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
                 "key": "Accept",
                 "value": "application/json",
                 "type": "text"
@@ -228,7 +263,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"step\": \"not-a-step\"\n}"
+              "raw": "{\n  \"step\": \"not-a-step\"\n}"
             },
             "url": "{{baseUrl}}/api/users/onboarding/step",
             "description": "Expect **400** — `step` must be one of: auth, identity, calibrate, done."

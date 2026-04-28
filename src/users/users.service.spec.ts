@@ -5,9 +5,10 @@ import { UserRecord } from './types/users.type';
 function buildMockUser(overrides: Partial<UserRecord> = {}): UserRecord {
   return {
     id: 'u1',
+    user_id: 'did:privy:cmock',
     email: 'alice@example.com',
     username: 'alice',
-    safe_wallet_address: '0x' + 'a'.repeat(40),
+    wallet_address: '0x' + 'a'.repeat(40),
     onboarding_complete: false,
     last_onboarding_step: 'auth',
     created_at: new Date().toISOString(),
@@ -56,7 +57,7 @@ describe('UsersService', () => {
     const user = buildMockUser({
       onboarding_complete: true,
       last_onboarding_step: 'done',
-      safe_wallet_address: null,
+      wallet_address: '',
     });
     repo.updateOnboardingStep.mockResolvedValue(user);
 
@@ -84,14 +85,19 @@ describe('UsersService', () => {
   });
 
   it('returns existing user flag and legacy username on email match', async () => {
-    const user = buildMockUser({ safe_wallet_address: null });
+    const user = buildMockUser({ wallet_address: '' });
     repo.ensureOnAuth.mockResolvedValue(user);
     repo.findLegacyUserByEmail.mockResolvedValue({
       username: 'legacy-alice',
     });
 
     await expect(
-      service.onAuth('u1', 'alice', '0x' + 'a'.repeat(40), 'alice@example.com'),
+      service.onAuth(
+        'did:privy:cmock',
+        'alice@example.com',
+        'alice',
+        '0x' + 'a'.repeat(40),
+      ),
     ).resolves.toEqual({
       onboarding_complete: false,
       last_onboarding_step: 'auth',
@@ -103,12 +109,12 @@ describe('UsersService', () => {
   });
 
   it('defaults to new user when lookup fails', async () => {
-    const user = buildMockUser({ safe_wallet_address: null });
+    const user = buildMockUser({ wallet_address: '' });
     repo.ensureOnAuth.mockResolvedValue(user);
     repo.findLegacyUserByEmail.mockRejectedValue(new Error('db unavailable'));
 
     await expect(
-      service.onAuth('u1', 'alice', undefined, 'alice@example.com'),
+      service.onAuth('did:privy:cmock', 'alice@example.com', 'alice'),
     ).resolves.toEqual({
       onboarding_complete: false,
       last_onboarding_step: 'auth',
@@ -120,10 +126,12 @@ describe('UsersService', () => {
   });
 
   it('treats missing email as new user', async () => {
-    const user = buildMockUser({ safe_wallet_address: null });
+    const user = buildMockUser({ wallet_address: '' });
     repo.ensureOnAuth.mockResolvedValue(user);
 
-    await expect(service.onAuth('u1', 'alice')).resolves.toEqual({
+    await expect(
+      service.onAuth('did:privy:cmock', undefined, 'alice'),
+    ).resolves.toEqual({
       onboarding_complete: false,
       last_onboarding_step: 'auth',
       onboarding_hash: '#step=auth',

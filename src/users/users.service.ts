@@ -12,16 +12,17 @@ export class UsersService {
 
   async onAuth(
     userId: string,
+    email?: string,
     username?: string,
     walletAddress?: string,
-    email?: string,
   ): Promise<UsersSessionResponse> {
+    const existingUser = await this.resolveExistingUserByEmail(email, userId);
     const user = await this.usersRepository.ensureOnAuth(
       userId,
+      email,
       username,
       walletAddress,
     );
-    const existingUser = await this.resolveExistingUserByEmail(email);
 
     return this.toSessionResponse(
       user?.onboarding_complete ?? false,
@@ -87,14 +88,17 @@ export class UsersService {
 
   private async resolveExistingUserByEmail(
     email?: string,
+    userId?: string,
   ): Promise<{ exists: boolean; legacyUsername: string | null }> {
     if (!email) {
       return { exists: false, legacyUsername: null };
     }
 
     try {
-      const legacyUser =
-        await this.usersRepository.findLegacyUserByEmail(email);
+      const legacyUser = await this.usersRepository.findLegacyUserByEmail(
+        email,
+        userId,
+      );
       return {
         exists: !!legacyUser,
         legacyUsername: legacyUser?.username ?? null,
