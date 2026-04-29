@@ -27,3 +27,13 @@ export type UsersSessionResponse = {
   legacy_username: string | null;
   user: UserRecord | null;
 };
+
+export type UsernameAvailabilityReason =
+  | 'taken'
+  | 'reserved'
+  | 'invalid_format';
+
+export type UsernameAvailabilityResponse = {
+  available: boolean;
+  reason?: UsernameAvailabilityReason;
+};

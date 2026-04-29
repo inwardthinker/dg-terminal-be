@@ -26,6 +26,7 @@ describe('UsersService', () => {
       | 'updateOnboardingStep'
       | 'replaceUserInterests'
       | 'completeOnboarding'
+      | 'isUsernameTaken'
       | 'findByUserId'
       | 'findLegacyUserByEmail'
     >
@@ -37,6 +38,7 @@ describe('UsersService', () => {
       updateOnboardingStep: jest.fn(),
       replaceUserInterests: jest.fn(),
       completeOnboarding: jest.fn(),
+      isUsernameTaken: jest.fn(),
       findByUserId: jest.fn(),
       findLegacyUserByEmail: jest.fn(),
     };
@@ -193,5 +195,44 @@ describe('UsersService', () => {
         })),
       ),
     ).rejects.toThrow('streams must contain between 1 and 5 items');
+  });
+
+  it('returns unavailable for invalid username format', async () => {
+    await expect(service.checkUsernameAvailability('ab')).resolves.toEqual({
+      available: false,
+      reason: 'invalid_format',
+    });
+    expect(repo.isUsernameTaken).not.toHaveBeenCalled();
+  });
+
+  it('returns unavailable for reserved username', async () => {
+    await expect(service.checkUsernameAvailability('Admin')).resolves.toEqual({
+      available: false,
+      reason: 'reserved',
+    });
+    expect(repo.isUsernameTaken).not.toHaveBeenCalled();
+  });
+
+  it('returns unavailable when username is already taken', async () => {
+    repo.isUsernameTaken.mockResolvedValue(true);
+
+    await expect(service.checkUsernameAvailability('alice_1')).resolves.toEqual(
+      {
+        available: false,
+        reason: 'taken',
+      },
+    );
+    expect(repo.isUsernameTaken).toHaveBeenCalledWith('alice_1');
+  });
+
+  it('returns available when username is free', async () => {
+    repo.isUsernameTaken.mockResolvedValue(false);
+
+    await expect(
+      service.checkUsernameAvailability('new_user'),
+    ).resolves.toEqual({
+      available: true,
+    });
+    expect(repo.isUsernameTaken).toHaveBeenCalledWith('new_user');
   });
 });

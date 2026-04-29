@@ -4,10 +4,21 @@ import {
   OnboardingStep,
 } from './types/onboarding-step.type';
 import {
+  UsernameAvailabilityResponse,
   UserInterestSelection,
   UsersSessionResponse,
 } from './types/users.type';
 import { UsersRepository } from './users.repository';
+
+const USERNAME_FORMAT_REGEX = /^[A-Za-z0-9_]{3,24}$/;
+const RESERVED_USERNAMES = new Set([
+  'admin',
+  'support',
+  'dgpredict',
+  'api',
+  'app',
+  'login',
+]);
 
 @Injectable()
 export class UsersService {
@@ -135,6 +146,24 @@ export class UsersService {
       null,
       user,
     );
+  }
+
+  async checkUsernameAvailability(
+    usernameInput: unknown,
+  ): Promise<UsernameAvailabilityResponse> {
+    const username =
+      typeof usernameInput === 'string' ? usernameInput.trim() : '';
+
+    if (!USERNAME_FORMAT_REGEX.test(username)) {
+      return { available: false, reason: 'invalid_format' };
+    }
+
+    if (RESERVED_USERNAMES.has(username.toLowerCase())) {
+      return { available: false, reason: 'reserved' };
+    }
+
+    const taken = await this.usersRepository.isUsernameTaken(username);
+    return taken ? { available: false, reason: 'taken' } : { available: true };
   }
 
   private toSessionResponse(

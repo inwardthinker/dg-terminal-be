@@ -1,22 +1,28 @@
-import { Body, Controller, Get, Patch, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  Req,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { OnboardingAuthBodyDto } from './dto/onboarding-auth.body.dto';
 import { UpdateOnboardingStepBodyDto } from './dto/update-onboarding-step.body.dto';
-import { PrivyIdentityService } from './privy-identity.service';
+import { UsersPrivyAuthGuard } from './guards/users-privy-auth.guard';
+import { UsernameAvailabilityResponse } from './types/users.type';
 import { UsersService } from './users.service';
 
 @Controller('api/users')
+@UseGuards(UsersPrivyAuthGuard)
 export class UsersController {
-  constructor(
-    private readonly usersService: UsersService,
-    private readonly privyIdentityService: PrivyIdentityService,
-  ) {}
+  constructor(private readonly usersService: UsersService) {}
 
   @Post('onboarding/auth')
   async onAuth(@Body() body: OnboardingAuthBodyDto, @Req() req: Request) {
-    const identity = await this.privyIdentityService.getIdentityFromToken(
-      this.extractPrivyIdToken(req),
-    );
+    const identity = this.getIdentity(req);
     return this.usersService.onAuth(
       identity.privyDid,
       identity.email ?? body.email,
@@ -30,9 +36,7 @@ export class UsersController {
     @Body() body: UpdateOnboardingStepBodyDto,
     @Req() req: Request,
   ) {
-    const identity = await this.privyIdentityService.getIdentityFromToken(
-      this.extractPrivyIdToken(req),
-    );
+    const identity = this.getIdentity(req);
     return this.usersService.updateOnboardingStep(
       identity.privyDid,
       body.step,
@@ -41,42 +45,36 @@ export class UsersController {
     );
   }
 
+  @Post('onboarding/username-availability')
+  async checkUsernameAvailability(
+    @Body() body: { username?: unknown },
+  ): Promise<UsernameAvailabilityResponse> {
+    return this.usersService.checkUsernameAvailability(body?.username);
+  }
+
   @Get('session')
   async getSession(@Req() req: Request) {
-    const identity = await this.privyIdentityService.getIdentityFromToken(
-      this.extractPrivyIdToken(req),
-    );
+    const identity = this.getIdentity(req);
     return this.usersService.getSession(identity.privyDid);
   }
 
-  private extractPrivyIdToken(req: Request): string {
-    const headerToken = req.headers['privy-id-token'];
-    if (typeof headerToken === 'string' && headerToken.length > 0) {
-      return headerToken;
+  private getIdentity(req: Request): {
+    privyDid: string;
+    email: string | null;
+    walletAddress: string | null;
+    providerUsername: string | null;
+  } {
+    const request = req as Request & {
+      privyIdentity?: {
+        privyDid: string;
+        email: string | null;
+        walletAddress: string | null;
+        providerUsername: string | null;
+      };
+    };
+    if (!request.privyIdentity) {
+      throw new UnauthorizedException('Missing authenticated user identity');
     }
-    if (Array.isArray(headerToken) && headerToken[0]) {
-      return headerToken[0];
-    }
-
-    const cookieHeader = req.headers.cookie;
-    if (typeof cookieHeader === 'string') {
-      const fromHeader = readCookie(cookieHeader, 'privy-id-token');
-      if (fromHeader) {
-        return fromHeader;
-      }
-    }
-
-    return '';
+    return request.privyIdentity;
   }
-}
-
-function readCookie(cookieHeader: string, key: string): string | null {
-  const prefix = `${key}=`;
-  for (const part of cookieHeader.split(';')) {
-    const trimmed = part.trim();
-    if (trimmed.startsWith(prefix)) {
-      return decodeURIComponent(trimmed.slice(prefix.length));
-    }
-  }
-  return null;
 }

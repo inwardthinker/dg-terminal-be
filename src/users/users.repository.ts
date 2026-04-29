@@ -28,6 +28,22 @@ export class UsersRepository {
     return rows[0] ?? null;
   }
 
+  async isUsernameTaken(username: string): Promise<boolean> {
+    const { rows } = await this.pool.query<{ exists: boolean }>(
+      `
+        SELECT EXISTS (
+          SELECT 1
+          FROM ${USERS_TABLE}
+          WHERE username IS NOT NULL
+            AND LOWER(username) = LOWER($1)
+        ) AS exists
+      `,
+      [username],
+    );
+
+    return rows[0]?.exists ?? false;
+  }
+
   async ensureOnAuth(
     userId: string,
     email?: string | null,

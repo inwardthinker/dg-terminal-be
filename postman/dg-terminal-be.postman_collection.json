@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "dg-terminal-be",
-    "description": "API tests for dg-terminal-be (NestJS).\n\n**Auth:** Portfolio routes require a non-empty `Authorization` header (value is not validated — use any Bearer token for local dev).\n\n**Wallet:** Set the `wallet` collection variable to a valid EVM address (`0x` + 40 hex chars).\n\n**Users:** Onboarding/session routes live under `/api/users` and do not require `Authorization`. Data is stored in `public.\"DG3_user\"`. Frontend sends Privy identity token in cookie (`privy-id-token`) or header (`privy-id-token`), and backend derives the user from token claims. You can still optionally pass `onboardingUsername` / `onboardingEmail` for local testing overrides on onboarding auth. Use `baseUrl` `http://localhost:3000` for local runs.",
+    "description": "API tests for dg-terminal-be (NestJS).\n\n**Auth:** Portfolio routes require a non-empty `Authorization` header (value is not validated — use any Bearer token for local dev).\n\n**Wallet:** Set the `wallet` collection variable to a valid EVM address (`0x` + 40 hex chars).\n\n**Users:** All `/api/users` routes require `privy-id-token` request header. Data is stored in `public.\"DG3_user\"`. Backend derives the user from Privy token claims. You can still optionally pass `onboardingUsername` / `onboardingEmail` for local testing overrides on onboarding auth. Use `baseUrl` `http://localhost:3000` for local runs.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -56,6 +56,11 @@
               {
                 "key": "Accept",
                 "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
                 "type": "text"
               }
             ],
@@ -216,6 +221,36 @@
             },
             "url": "{{baseUrl}}/api/users/onboarding/step",
             "description": "Completes onboarding: `onboarding_complete=true`, `last_onboarding_step=done`, `onboarding_hash` null in session payload."
+          },
+          "response": []
+        },
+        {
+          "name": "POST onboarding/username-availability",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{onboardingUsername}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/users/onboarding/username-availability",
+            "description": "Returns `{ available: boolean, reason?: 'taken' | 'reserved' | 'invalid_format' }`. Username rules: 3-24 chars, alphanumeric + underscore only, case-insensitive uniqueness, reserved list includes admin/support/dgpredict/api/app/login."
           },
           "response": []
         },
