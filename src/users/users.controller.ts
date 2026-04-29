@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { OnboardingAuthBodyDto } from './dto/onboarding-auth.body.dto';
+import { UpdateOnboardingIdentityBodyDto } from './dto/update-onboarding-identity.body.dto';
 import { UpdateOnboardingStepBodyDto } from './dto/update-onboarding-step.body.dto';
 import { UsersPrivyAuthGuard } from './guards/users-privy-auth.guard';
 import { UsernameAvailabilityResponse } from './types/users.type';
@@ -42,6 +43,19 @@ export class UsersController {
       body.step,
       body.username,
       body.streams,
+    );
+  }
+
+  @Patch('onboarding/identity')
+  async updateOnboardingIdentity(
+    @Body() body: UpdateOnboardingIdentityBodyDto,
+    @Req() req: Request,
+  ) {
+    const identity = this.getIdentity(req);
+    return this.usersService.updateOnboardingIdentity(
+      identity.privyDid,
+      body.username,
+      body.avatar_url,
     );
   }
 

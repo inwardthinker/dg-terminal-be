@@ -165,6 +165,66 @@
           "response": []
         },
         {
+          "name": "PATCH onboarding/identity (username + optional avatar_url)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{onboardingUsername}}\",\n  \"avatar_url\": \"https://cdn.example.com/avatar.png\"\n}"
+            },
+            "url": "{{baseUrl}}/api/users/onboarding/identity",
+            "description": "Writes username + optional avatar_url for Step 1. Re-validates username availability at write time to prevent race conditions."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH onboarding/identity — 409 (username taken race)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"already_taken\",\n  \"avatar_url\": \"https://cdn.example.com/avatar.png\"\n}"
+            },
+            "url": "{{baseUrl}}/api/users/onboarding/identity",
+            "description": "Expect **409** with message `Already taken` when username is claimed between availability check and save."
+          },
+          "response": []
+        },
+        {
           "name": "PATCH onboarding/step → calibrate",
           "request": {
             "method": "PATCH",

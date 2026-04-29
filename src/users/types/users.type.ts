@@ -5,6 +5,7 @@ export type UserRecord = {
   user_id: string | null;
   email: string | null;
   username: string | null;
+  avatar_url?: string | null;
   wallet_address: string;
   onboarding_complete: boolean;
   last_onboarding_step: OnboardingStep;

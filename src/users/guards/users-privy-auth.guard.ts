@@ -31,12 +31,20 @@ export class UsersPrivyAuthGuard implements CanActivate {
   }
 
   private extractPrivyIdToken(request: UsersRequest): string {
-    const headerToken = request.headers?.['privy-id-token'];
-    if (typeof headerToken === 'string' && headerToken.trim()) {
-      return headerToken;
+    const primaryToken = request.headers?.['privy-id-token'];
+    if (typeof primaryToken === 'string' && primaryToken.trim()) {
+      return primaryToken;
     }
-    if (Array.isArray(headerToken) && headerToken[0]?.trim()) {
-      return headerToken[0];
+    if (Array.isArray(primaryToken) && primaryToken[0]?.trim()) {
+      return primaryToken[0];
+    }
+
+    const fallbackToken = request.headers?.['privy-token'];
+    if (typeof fallbackToken === 'string' && fallbackToken.trim()) {
+      return fallbackToken;
+    }
+    if (Array.isArray(fallbackToken) && fallbackToken[0]?.trim()) {
+      return fallbackToken[0];
     }
 
     throw new UnauthorizedException('Missing Privy identity token header');

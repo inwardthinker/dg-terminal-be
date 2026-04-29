@@ -26,7 +26,9 @@ describe('UsersService', () => {
       | 'updateOnboardingStep'
       | 'replaceUserInterests'
       | 'completeOnboarding'
+      | 'updateOnboardingIdentity'
       | 'isUsernameTaken'
+      | 'isUsernameTakenByOtherUser'
       | 'findByUserId'
       | 'findLegacyUserByEmail'
     >
@@ -38,7 +40,9 @@ describe('UsersService', () => {
       updateOnboardingStep: jest.fn(),
       replaceUserInterests: jest.fn(),
       completeOnboarding: jest.fn(),
+      updateOnboardingIdentity: jest.fn(),
       isUsernameTaken: jest.fn(),
+      isUsernameTakenByOtherUser: jest.fn(),
       findByUserId: jest.fn(),
       findLegacyUserByEmail: jest.fn(),
     };
@@ -217,5 +221,38 @@ describe('UsersService', () => {
       available: true,
     });
     expect(repo.isUsernameTaken).toHaveBeenCalledWith('new_user');
+  });
+
+  it('updates onboarding identity with username and avatar', async () => {
+    const user = buildMockUser({
+      username: 'new_user',
+      avatar_url: 'https://cdn.example.com/avatar.png',
+      last_onboarding_step: 'identity',
+    });
+    repo.updateOnboardingIdentity.mockResolvedValue(user);
+
+    await expect(
+      service.updateOnboardingIdentity(
+        'u1',
+        'new_user',
+        'https://cdn.example.com/avatar.png',
+      ),
+    ).resolves.toEqual({
+      onboarding_complete: false,
+      last_onboarding_step: 'identity',
+      onboarding_hash: '#step=identity',
+      existing_user: false,
+      legacy_username: null,
+      user,
+    });
+  });
+
+  it('returns conflict when username is taken at write time', async () => {
+    repo.updateOnboardingIdentity.mockResolvedValue(null);
+    repo.isUsernameTakenByOtherUser.mockResolvedValue(true);
+
+    await expect(
+      service.updateOnboardingIdentity('u1', 'alice_1'),
+    ).rejects.toThrow('Already taken');
   });
 });
