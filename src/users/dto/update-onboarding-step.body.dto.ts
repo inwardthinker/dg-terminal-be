@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
 import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ONBOARDING_STEPS } from '../types/onboarding-step.type';
+import { UserInterestSelection } from '../types/users.type';
 
 export class UpdateOnboardingStepBodyDto {
   @IsIn(ONBOARDING_STEPS)
@@ -13,4 +14,7 @@ export class UpdateOnboardingStepBodyDto {
   @IsString()
   @MaxLength(64)
   username?: string;
+
+  @IsOptional()
+  streams?: UserInterestSelection[];
 }
