@@ -26,7 +26,7 @@ export class UsersController {
     return this.usersService.onAuth(
       identity.privyDid,
       identity.email ?? body.email,
-      body.username ?? identity.providerUsername ?? undefined,
+      body.username,
       identity.walletAddress ?? undefined,
     );
   }

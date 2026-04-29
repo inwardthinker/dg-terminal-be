@@ -1,9 +1,7 @@
 import { Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { OnboardingStep } from './types/onboarding-step.type';
 import {
-  ONBOARDING_STEP_HASH_MAP,
-  OnboardingStep,
-} from './types/onboarding-step.type';
-import {
+  UserRecord,
   UsernameAvailabilityResponse,
   UserInterestSelection,
   UsersSessionResponse,
@@ -38,13 +36,7 @@ export class UsersService {
       walletAddress,
     );
 
-    return this.toSessionResponse(
-      user?.onboarding_complete ?? false,
-      user?.last_onboarding_step ?? 'auth',
-      existingUser.exists,
-      existingUser.legacyUsername,
-      user,
-    );
+    return this.toSessionResponse(existingUser.exists, user);
   }
 
   async updateOnboardingStep(
@@ -61,13 +53,7 @@ export class UsersService {
             step,
             username,
           );
-    return this.toSessionResponse(
-      user?.onboarding_complete ?? false,
-      user?.last_onboarding_step ?? 'auth',
-      false,
-      null,
-      user,
-    );
+    return this.toSessionResponse(false, user);
   }
 
   private async completeCalibration(
@@ -135,17 +121,7 @@ export class UsersService {
 
   async getSession(userId: string): Promise<UsersSessionResponse> {
     const user = await this.usersRepository.findByUserId(userId);
-    if (!user) {
-      return this.toSessionResponse(false, 'auth', false, null, null);
-    }
-
-    return this.toSessionResponse(
-      user.onboarding_complete,
-      user.last_onboarding_step,
-      false,
-      null,
-      user,
-    );
+    return this.toSessionResponse(false, user);
   }
 
   async checkUsernameAvailability(
@@ -167,30 +143,25 @@ export class UsersService {
   }
 
   private toSessionResponse(
-    onboardingComplete: boolean,
-    step: OnboardingStep,
     existingUser: boolean,
-    legacyUsername: string | null,
-    user: UsersSessionResponse['user'],
+    user: UserRecord | null,
   ): UsersSessionResponse {
     return {
-      onboarding_complete: onboardingComplete,
-      last_onboarding_step: step,
-      onboarding_hash: onboardingComplete
-        ? null
-        : ONBOARDING_STEP_HASH_MAP[step],
-      existing_user: existingUser,
-      legacy_username: legacyUsername,
-      user,
+      user: user
+        ? {
+            ...user,
+            existing_user: existingUser,
+          }
+        : null,
     };
   }
 
   private async resolveExistingUserByEmail(
     email?: string,
     userId?: string,
-  ): Promise<{ exists: boolean; legacyUsername: string | null }> {
+  ): Promise<{ exists: boolean }> {
     if (!email) {
-      return { exists: false, legacyUsername: null };
+      return { exists: false };
     }
 
     try {
@@ -200,10 +171,9 @@ export class UsersService {
       );
       return {
         exists: !!legacyUser,
-        legacyUsername: legacyUser?.username ?? null,
       };
     } catch {
-      return { exists: false, legacyUsername: null };
+      return { exists: false };
     }
   }
 }

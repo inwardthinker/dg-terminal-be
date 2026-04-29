@@ -50,12 +50,10 @@ describe('UsersService', () => {
     repo.findByUserId.mockResolvedValue(user);
 
     await expect(service.getSession('u1')).resolves.toEqual({
-      onboarding_complete: false,
-      last_onboarding_step: 'identity',
-      onboarding_hash: '#step=identity',
-      existing_user: false,
-      legacy_username: null,
-      user,
+      user: {
+        ...user,
+        existing_user: false,
+      },
     });
   });
 
@@ -68,12 +66,10 @@ describe('UsersService', () => {
     repo.updateOnboardingStep.mockResolvedValue(user);
 
     await expect(service.updateOnboardingStep('u1', 'done')).resolves.toEqual({
-      onboarding_complete: true,
-      last_onboarding_step: 'done',
-      onboarding_hash: null,
-      existing_user: false,
-      legacy_username: null,
-      user,
+      user: {
+        ...user,
+        existing_user: false,
+      },
     });
   });
 
@@ -81,11 +77,6 @@ describe('UsersService', () => {
     repo.findByUserId.mockResolvedValue(null);
 
     await expect(service.getSession('new-user')).resolves.toEqual({
-      onboarding_complete: false,
-      last_onboarding_step: 'auth',
-      onboarding_hash: '#step=auth',
-      existing_user: false,
-      legacy_username: null,
       user: null,
     });
   });
@@ -105,12 +96,10 @@ describe('UsersService', () => {
         '0x' + 'a'.repeat(40),
       ),
     ).resolves.toEqual({
-      onboarding_complete: false,
-      last_onboarding_step: 'auth',
-      onboarding_hash: '#step=auth',
-      existing_user: true,
-      legacy_username: 'legacy-alice',
-      user,
+      user: {
+        ...user,
+        existing_user: true,
+      },
     });
   });
 
@@ -122,12 +111,10 @@ describe('UsersService', () => {
     await expect(
       service.onAuth('did:privy:cmock', 'alice@example.com', 'alice'),
     ).resolves.toEqual({
-      onboarding_complete: false,
-      last_onboarding_step: 'auth',
-      onboarding_hash: '#step=auth',
-      existing_user: false,
-      legacy_username: null,
-      user,
+      user: {
+        ...user,
+        existing_user: false,
+      },
     });
   });
 
@@ -138,12 +125,10 @@ describe('UsersService', () => {
     await expect(
       service.onAuth('did:privy:cmock', undefined, 'alice'),
     ).resolves.toEqual({
-      onboarding_complete: false,
-      last_onboarding_step: 'auth',
-      onboarding_hash: '#step=auth',
-      existing_user: false,
-      legacy_username: null,
-      user,
+      user: {
+        ...user,
+        existing_user: false,
+      },
     });
     expect(repo.findLegacyUserByEmail).not.toHaveBeenCalled();
   });
@@ -162,12 +147,10 @@ describe('UsersService', () => {
         { stream: 'crypto', markets: ['btc', 'eth'] },
       ]),
     ).resolves.toEqual({
-      onboarding_complete: true,
-      last_onboarding_step: 'done',
-      onboarding_hash: null,
-      existing_user: false,
-      legacy_username: null,
-      user,
+      user: {
+        ...user,
+        existing_user: false,
+      },
     });
     expect(repo.replaceUserInterests).toHaveBeenCalledWith('u1', [
       { stream: 'crypto', markets: ['btc', 'eth'] },
