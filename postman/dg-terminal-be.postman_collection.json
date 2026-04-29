@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "dg-terminal-be",
-    "description": "Staging API tests for dg-terminal-be (NestJS).\n\n**Auth:** Portfolio routes require a non-empty `Authorization` header (value is not validated — use any Bearer token for local dev).\n\n**Wallet:** Set the `wallet` collection variable to a valid EVM address (`0x` + 40 hex chars).",
+    "description": "API tests for dg-terminal-be (NestJS).\n\n**Auth:** Portfolio routes require a non-empty `Authorization` header (value is not validated — use any Bearer token for local dev).\n\n**Wallet:** Set the `wallet` collection variable to a valid EVM address (`0x` + 40 hex chars).\n\n**Users:** Onboarding/session routes live under `/api/users` and do not require `Authorization`. Data is stored in `public.\"DG3_user\"`. Frontend sends Privy identity token in cookie (`privy-id-token`) or header (`privy-id-token`), and backend derives the user from token claims. You can still optionally pass `onboardingUsername` / `onboardingEmail` for local testing overrides on onboarding auth. Use `baseUrl` `http://localhost:3000` for local runs.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -30,6 +30,18 @@
     {
       "key": "authorization",
       "value": "Bearer dev-token"
+    },
+    {
+      "key": "onboardingUsername",
+      "value": "dev_trader"
+    },
+    {
+      "key": "onboardingEmail",
+      "value": "dev.user@example.com"
+    },
+    {
+      "key": "privyIdToken",
+      "value": ""
     }
   ],
   "item": [
@@ -49,6 +61,212 @@
             ],
             "url": "{{baseUrl}}/",
             "description": "Root handler — returns plain text from `AppService`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "POST onboarding/auth (new user path, token in cookie)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{baseUrl}}/api/users/onboarding/auth",
+            "description": "Upserts user from Privy identity token (`privy-id-token`) and sets onboarding defaults. Without email claim/match, response defaults to `existing_user=false` and `legacy_username=null`."
+          },
+          "response": []
+        },
+        {
+          "name": "POST onboarding/auth (+ optional overrides)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{onboardingUsername}}\",\n  \"email\": \"{{onboardingEmail}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/users/onboarding/auth",
+            "description": "Same as minimal auth, plus optional payload overrides for `username` and `email`. `wallet_address` always comes from the Privy token linked accounts."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH onboarding/step → identity (+ username)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"identity\",\n  \"username\": \"{{onboardingUsername}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/users/onboarding/step",
+            "description": "Advances onboarding to Step 1 (`#step=identity`). Persists `username` when sent."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH onboarding/step → calibrate",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"calibrate\"\n}"
+            },
+            "url": "{{baseUrl}}/api/users/onboarding/step",
+            "description": "Step 2 — interests (`#step=calibrate`). Optional `username` in body if you need to update it again."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH onboarding/step → done",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"done\"\n}"
+            },
+            "url": "{{baseUrl}}/api/users/onboarding/step",
+            "description": "Completes onboarding: `onboarding_complete=true`, `last_onboarding_step=done`, `onboarding_hash` null in session payload."
+          },
+          "response": []
+        },
+        {
+          "name": "GET session (restore)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/api/users/session",
+            "description": "Returns `{ onboarding_complete, last_onboarding_step, onboarding_hash, existing_user, legacy_username, user }` for the authenticated Privy user from cookie/header token. `user` contains full `users` row when found, otherwise null."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH onboarding/step — 400 (invalid step)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"not-a-step\"\n}"
+            },
+            "url": "{{baseUrl}}/api/users/onboarding/step",
+            "description": "Expect **400** — `step` must be one of: auth, identity, calibrate, done."
           },
           "response": []
         }
