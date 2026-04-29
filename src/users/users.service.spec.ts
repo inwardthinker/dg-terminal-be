@@ -24,6 +24,8 @@ describe('UsersService', () => {
       UsersRepository,
       | 'ensureOnAuth'
       | 'updateOnboardingStep'
+      | 'replaceUserInterests'
+      | 'completeOnboarding'
       | 'findByUserId'
       | 'findLegacyUserByEmail'
     >
@@ -33,6 +35,8 @@ describe('UsersService', () => {
     repo = {
       ensureOnAuth: jest.fn(),
       updateOnboardingStep: jest.fn(),
+      replaceUserInterests: jest.fn(),
+      completeOnboarding: jest.fn(),
       findByUserId: jest.fn(),
       findLegacyUserByEmail: jest.fn(),
     };
@@ -140,5 +144,54 @@ describe('UsersService', () => {
       user,
     });
     expect(repo.findLegacyUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it('completes onboarding from calibrate step with stream selections', async () => {
+    const user = buildMockUser({
+      onboarding_complete: true,
+      last_onboarding_step: 'done',
+      completed_at: new Date().toISOString(),
+    });
+    repo.completeOnboarding.mockResolvedValue(user);
+    repo.replaceUserInterests.mockResolvedValue();
+
+    await expect(
+      service.updateOnboardingStep('u1', 'calibrate', undefined, [
+        { stream: 'crypto', markets: ['btc', 'eth'] },
+      ]),
+    ).resolves.toEqual({
+      onboarding_complete: true,
+      last_onboarding_step: 'done',
+      onboarding_hash: null,
+      existing_user: false,
+      legacy_username: null,
+      user,
+    });
+    expect(repo.replaceUserInterests).toHaveBeenCalledWith('u1', [
+      { stream: 'crypto', markets: ['btc', 'eth'] },
+    ]);
+    expect(repo.completeOnboarding).toHaveBeenCalledWith('u1', undefined);
+    expect(repo.updateOnboardingStep).not.toHaveBeenCalled();
+  });
+
+  it('throws for empty calibration streams', async () => {
+    await expect(
+      service.updateOnboardingStep('u1', 'calibrate', undefined, []),
+    ).rejects.toThrow('streams must contain between 1 and 5 items');
+    expect(repo.replaceUserInterests).not.toHaveBeenCalled();
+  });
+
+  it('throws when calibration stream count exceeds max', async () => {
+    await expect(
+      service.updateOnboardingStep(
+        'u1',
+        'calibrate',
+        undefined,
+        Array.from({ length: 6 }, (_, index) => ({
+          stream: `stream-${index + 1}`,
+          markets: [],
+        })),
+      ),
+    ).rejects.toThrow('streams must contain between 1 and 5 items');
   });
 });

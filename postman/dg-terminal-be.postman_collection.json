@@ -182,10 +182,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"step\": \"calibrate\"\n}"
+              "raw": "{\n  \"step\": \"calibrate\",\n  \"streams\": [\n    {\n      \"stream\": \"crypto\",\n      \"markets\": [\"btc\", \"eth\"]\n    }\n  ]\n}"
             },
             "url": "{{baseUrl}}/api/users/onboarding/step",
-            "description": "Step 2 — interests (`#step=calibrate`). Optional `username` in body if you need to update it again."
+            "description": "Calibration completion step. Requires `streams` (1-5): `[{ stream, markets: [] }]`. On success, backend persists `dg3_user_interests`, marks onboarding complete, sets `completed_at`, and triggers feed personalisation worker asynchronously."
           },
           "response": []
         },
@@ -267,6 +267,36 @@
             },
             "url": "{{baseUrl}}/api/users/onboarding/step",
             "description": "Expect **400** — `step` must be one of: auth, identity, calibrate, done."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH onboarding/step → calibrate — 422 (invalid streams)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "privy-id-token",
+                "value": "{{privyIdToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"calibrate\",\n  \"streams\": []\n}"
+            },
+            "url": "{{baseUrl}}/api/users/onboarding/step",
+            "description": "Expect **422** — calibration requires `streams` with 1 to 5 items."
           },
           "response": []
         }

@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Pool } from 'pg';
 import { PG_POOL } from '../database/database.constants';
 import { OnboardingStep } from './types/onboarding-step.type';
-import { UserRecord } from './types/users.type';
+import { UserInterestSelection, UserRecord } from './types/users.type';
 
 const USERS_TABLE = 'public."DG3_user"';
 
@@ -97,6 +97,59 @@ export class UsersRepository {
         RETURNING *
       `,
       [userId, onboardingComplete, step, username ?? null],
+    );
+
+    return rows[0] ?? null;
+  }
+
+  async replaceUserInterests(
+    userId: string,
+    selections: UserInterestSelection[],
+  ): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'DELETE FROM public.dg3_user_interests WHERE user_id = $1',
+        [userId],
+      );
+
+      for (const selection of selections) {
+        await client.query(
+          `
+            INSERT INTO public.dg3_user_interests (user_id, stream_id, markets, created_at, updated_at)
+            VALUES ($1, $2, $3::jsonb, NOW(), NOW())
+          `,
+          [userId, selection.stream, JSON.stringify(selection.markets)],
+        );
+      }
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async completeOnboarding(
+    userId: string,
+    username?: string,
+  ): Promise<UserRecord | null> {
+    const { rows } = await this.pool.query<UserRecord>(
+      `
+        UPDATE ${USERS_TABLE}
+        SET
+          onboarding_complete = TRUE,
+          last_onboarding_step = 'done',
+          completed_at = NOW(),
+          username = COALESCE($2, username),
+          updated_at = NOW()
+        WHERE user_id = $1
+        RETURNING *
+      `,
+      [userId, username ?? null],
     );
 
     return rows[0] ?? null;

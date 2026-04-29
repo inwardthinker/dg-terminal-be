@@ -8,9 +8,15 @@ export type UserRecord = {
   wallet_address: string;
   onboarding_complete: boolean;
   last_onboarding_step: OnboardingStep;
+  completed_at?: string | null;
   created_at: string;
   updated_at: string;
   [key: string]: unknown;
+};
+
+export type UserInterestSelection = {
+  stream: string;
+  markets: string[];
 };
 
 export type UsersSessionResponse = {

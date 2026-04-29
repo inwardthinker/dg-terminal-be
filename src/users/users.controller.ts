@@ -37,6 +37,7 @@ export class UsersController {
       identity.privyDid,
       body.step,
       body.username,
+      body.streams,
     );
   }
 
