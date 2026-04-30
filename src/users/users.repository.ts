@@ -44,6 +44,26 @@ export class UsersRepository {
     return rows[0]?.exists ?? false;
   }
 
+  async isUsernameTakenByOtherUser(
+    userId: string,
+    username: string,
+  ): Promise<boolean> {
+    const { rows } = await this.pool.query<{ exists: boolean }>(
+      `
+        SELECT EXISTS (
+          SELECT 1
+          FROM ${USERS_TABLE}
+          WHERE username IS NOT NULL
+            AND LOWER(username) = LOWER($2)
+            AND user_id IS DISTINCT FROM $1
+        ) AS exists
+      `,
+      [userId, username],
+    );
+
+    return rows[0]?.exists ?? false;
+  }
+
   async ensureOnAuth(
     userId: string,
     email?: string | null,
@@ -166,6 +186,36 @@ export class UsersRepository {
         RETURNING *
       `,
       [userId, username ?? null],
+    );
+
+    return rows[0] ?? null;
+  }
+
+  async updateOnboardingIdentity(
+    userId: string,
+    username: string,
+    avatarUrl?: string,
+  ): Promise<UserRecord | null> {
+    const { rows } = await this.pool.query<UserRecord>(
+      `
+        UPDATE ${USERS_TABLE}
+        SET
+          username = $2,
+          avatar_url = COALESCE($3, avatar_url),
+          onboarding_complete = FALSE,
+          last_onboarding_step = 'identity',
+          updated_at = NOW()
+        WHERE user_id = $1
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ${USERS_TABLE} taken
+            WHERE taken.username IS NOT NULL
+              AND LOWER(taken.username) = LOWER($2)
+              AND taken.user_id IS DISTINCT FROM $1
+          )
+        RETURNING *
+      `,
+      [userId, username, avatarUrl ?? null],
     );
 
     return rows[0] ?? null;

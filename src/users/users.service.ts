@@ -1,4 +1,9 @@
-import { Injectable, UnprocessableEntityException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { OnboardingStep } from './types/onboarding-step.type';
 import {
   UserRecord,
@@ -124,6 +129,37 @@ export class UsersService {
     return this.toSessionResponse(false, user);
   }
 
+  async updateOnboardingIdentity(
+    userId: string,
+    usernameInput: unknown,
+    avatarUrlInput?: unknown,
+  ): Promise<UsersSessionResponse> {
+    const username = this.normalizeUsernameOrThrow(usernameInput);
+    const avatarUrl = this.normalizeAvatarUrl(avatarUrlInput);
+
+    const user = await this.usersRepository.updateOnboardingIdentity(
+      userId,
+      username,
+      avatarUrl,
+    );
+
+    if (!user) {
+      const taken = await this.usersRepository.isUsernameTakenByOtherUser(
+        userId,
+        username,
+      );
+      if (taken) {
+        throw new ConflictException('Already taken');
+      }
+      throw new NotFoundException('User not found');
+    }
+
+    return this.toSessionResponse(
+      false,
+      user,
+    );
+  }
+
   async checkUsernameAvailability(
     usernameInput: unknown,
   ): Promise<UsernameAvailabilityResponse> {
@@ -175,5 +211,29 @@ export class UsersService {
     } catch {
       return { exists: false };
     }
+  }
+
+  private normalizeUsernameOrThrow(usernameInput: unknown): string {
+    const username =
+      typeof usernameInput === 'string' ? usernameInput.trim() : '';
+
+    if (!USERNAME_FORMAT_REGEX.test(username)) {
+      throw new UnprocessableEntityException(
+        'username must be 3-24 chars and contain only letters, numbers, or underscore',
+      );
+    }
+    if (RESERVED_USERNAMES.has(username.toLowerCase())) {
+      throw new UnprocessableEntityException('username is reserved');
+    }
+
+    return username;
+  }
+
+  private normalizeAvatarUrl(avatarUrlInput: unknown): string | undefined {
+    if (typeof avatarUrlInput !== 'string') {
+      return undefined;
+    }
+    const trimmed = avatarUrlInput.trim();
+    return trimmed || undefined;
   }
 }
