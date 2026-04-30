@@ -1,0 +1,17 @@
+{
+  "baseUrl": "https://dg-terminal-be-staging.up.railway.app",
+  "endpointPath": "/api/portfolio/trades",
+  "wallet": "0x798a7921f5b2c684ecbaa7a6ae216a819fa6cc72",
+  "query": {
+    "period": "1d",
+    "per_page": "25"
+  },
+  "headers": {
+    "Authorization": "Bearer benchmark"
+  },
+  "requests": 1000,
+  "warmupRequests": 100,
+  "concurrency": 10,
+  "rounds": 5,
+  "timeoutMs": 10000
+}
