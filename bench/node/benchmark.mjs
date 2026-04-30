@@ -57,7 +57,7 @@ async function main() {
   const config = JSON.parse(configRaw);
 
   const qs = new URLSearchParams({
-    wallet: config.wallet,
+    [config.walletQueryParam || "wallet"]: config.wallet,
     period: config.query.period,
     per_page: config.query.per_page,
   });

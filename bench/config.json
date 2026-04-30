@@ -1,6 +1,7 @@
 {
   "baseUrl": "https://dg-terminal-be-staging.up.railway.app",
   "endpointPath": "/api/portfolio/trades",
+  "walletQueryParam": "walletAddress",
   "wallet": "0x798a7921f5b2c684ecbaa7a6ae216a819fa6cc72",
   "query": {
     "period": "1d",

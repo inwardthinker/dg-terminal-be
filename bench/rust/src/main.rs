@@ -14,6 +14,8 @@ struct Config {
     base_url: String,
     #[serde(rename = "endpointPath")]
     endpoint_path: String,
+    #[serde(rename = "walletQueryParam")]
+    wallet_query_param: Option<String>,
     wallet: String,
     query: HashMap<String, String>,
     headers: HashMap<String, String>,
@@ -172,9 +174,13 @@ async fn main() {
 
     let period = cfg.query.get("period").cloned().unwrap_or_else(|| "1d".to_string());
     let per_page = cfg.query.get("per_page").cloned().unwrap_or_else(|| "25".to_string());
+    let wallet_param = cfg
+        .wallet_query_param
+        .clone()
+        .unwrap_or_else(|| "wallet".to_string());
     let url = format!(
-        "{}{}?wallet={}&period={}&per_page={}",
-        cfg.base_url, cfg.endpoint_path, cfg.wallet, period, per_page
+        "{}{}?{}={}&period={}&per_page={}",
+        cfg.base_url, cfg.endpoint_path, wallet_param, cfg.wallet, period, per_page
     );
 
     let client = Client::builder()

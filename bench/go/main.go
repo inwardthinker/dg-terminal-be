@@ -20,6 +20,7 @@ import (
 type Config struct {
 	BaseURL      string            `json:"baseUrl"`
 	EndpointPath string            `json:"endpointPath"`
+	WalletQuery  string            `json:"walletQueryParam"`
 	Wallet       string            `json:"wallet"`
 	Query        map[string]string `json:"query"`
 	Headers      map[string]string `json:"headers"`
@@ -147,7 +148,11 @@ func main() {
 	}
 
 	values := url.Values{}
-	values.Set("wallet", cfg.Wallet)
+	walletParam := cfg.WalletQuery
+	if walletParam == "" {
+		walletParam = "wallet"
+	}
+	values.Set(walletParam, cfg.Wallet)
 	values.Set("period", cfg.Query["period"])
 	values.Set("per_page", cfg.Query["per_page"])
 	targetURL := fmt.Sprintf("%s%s?%s", cfg.BaseURL, cfg.EndpointPath, values.Encode())
